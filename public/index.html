@@ -1,1 +1,116 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sala Sonora — chat e rádio da galera</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
 
+  <!-- Modal: escolher apelido -->
+  <div id="modal-nome" class="modal-overlay">
+    <div class="modal">
+      <h2>Como devemos te chamar?</h2>
+      <p class="modal-sub">Seu apelido fica salvo neste navegador.</p>
+      <input id="input-nome" type="text" maxlength="30" placeholder="Seu apelido" autocomplete="off" />
+      <button id="btn-entrar" class="btn-primario">Entrar na sala</button>
+      <p id="erro-nome" class="erro-form"></p>
+    </div>
+  </div>
+
+  <!-- Modal: criar nova sala -->
+  <div id="modal-sala" class="modal-overlay escondido">
+    <div class="modal">
+      <h2>Criar nova sala</h2>
+      <input id="input-sala" type="text" maxlength="30" placeholder="Nome da sala" autocomplete="off" />
+      <div class="emoji-picker" id="emoji-picker"></div>
+      <div class="modal-botoes">
+        <button id="btn-cancelar-sala" class="btn-secundario">Cancelar</button>
+        <button id="btn-criar-sala" class="btn-primario">Criar sala</button>
+      </div>
+      <p id="erro-sala" class="erro-form"></p>
+    </div>
+  </div>
+
+  <!-- Modal: pesquisar música -->
+  <div id="modal-musica" class="modal-overlay escondido">
+    <div class="modal modal-grande">
+      <div class="modal-topo">
+        <h2>Pesquisar música</h2>
+        <button id="btn-fechar-musica" class="btn-fechar" aria-label="Fechar">&times;</button>
+      </div>
+      <div class="busca-musica">
+        <input id="input-busca-musica" type="text" placeholder="Nome da música ou artista..." autocomplete="off" />
+        <button id="btn-buscar-musica" class="btn-primario">Buscar</button>
+      </div>
+      <p id="status-busca-musica" class="status-busca"></p>
+      <div id="resultados-musica" class="resultados-musica"></div>
+    </div>
+  </div>
+
+  <!-- App principal -->
+  <div id="app" class="app escondido">
+
+    <aside class="sidebar">
+      <div class="cartao-usuario">
+        <div class="avatar" id="avatar-usuario"></div>
+        <div class="info-usuario">
+          <strong id="nome-usuario">—</strong>
+          <span class="status-online">● Online</span>
+        </div>
+        <button id="btn-alterar-nome" class="btn-link">Alterar</button>
+      </div>
+
+      <div class="secao-salas">
+        <div class="secao-titulo">SALAS</div>
+        <ul id="lista-salas" class="lista-salas"></ul>
+        <button id="btn-nova-sala" class="btn-nova-sala">+ Nova sala</button>
+      </div>
+
+      <div class="mini-radio">
+        <div class="mini-radio-topo">🎧 Rádio da sala</div>
+        <div id="mini-radio-titulo" class="mini-radio-titulo">Nenhuma música tocando</div>
+        <button id="btn-ativar-audio" class="btn-secundario btn-ativar-audio escondido">Ativar áudio</button>
+      </div>
+    </aside>
+
+    <main class="principal">
+
+      <section class="painel-radio">
+        <div id="capa-radio" class="capa-radio">🎵</div>
+        <div class="info-radio">
+          <div id="titulo-radio" class="titulo-radio">Nenhuma música tocando</div>
+          <div id="artista-radio" class="artista-radio">Pesquise qualquer música ou artista</div>
+          <div id="fila-preview" class="fila-preview"></div>
+        </div>
+        <div class="acoes-radio">
+          <button id="btn-pular-musica" class="btn-secundario escondido">Pular ▶▶</button>
+          <button id="btn-abrir-busca" class="btn-primario">🔍 Pesquisar música</button>
+        </div>
+      </section>
+
+      <div id="player-youtube"></div>
+
+      <header class="cabecalho-sala">
+        <span id="emoji-sala-atual">#</span>
+        <span id="nome-sala-atual">geral</span>
+        <span id="presenca-sala" class="presenca-sala"></span>
+      </header>
+
+      <section id="lista-mensagens" class="lista-mensagens"></section>
+
+      <footer class="compositor">
+        <button class="btn-anexo" type="button" title="Em breve">📷</button>
+        <button class="btn-anexo" type="button" title="Em breve">GIF</button>
+        <textarea id="input-mensagem" rows="1" placeholder="Digite uma mensagem... (dica: !play nome da música)"></textarea>
+        <button id="btn-enviar" class="btn-primario">Enviar</button>
+      </footer>
+
+    </main>
+  </div>
+
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="app.js"></script>
+</body>
+</html>
