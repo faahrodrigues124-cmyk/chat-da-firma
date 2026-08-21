@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nova guia</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background: #0f0c1b;
+            color: #ffffff;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            width: 96vw;
+            max-width: 1350px;
+            height: 92vh;
+            background: #161228;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            position: relative;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 300px;
+            background: #110d20;
+            border-right: 1px solid rgba(255, 255, 255, 0.06);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .user-box {
+            padding: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .user-meta {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #a855f7, #ec4899);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .btn-small {
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            color: #ccc;
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: 0.2s;
+        }
+
+        .btn-small:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+        }
+
+        .rooms-header {
+            padding: 14px 16px 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #888;
+        }
+
+        .rooms-list {
+            flex: 1;
+            padding: 8px 12px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .room-btn {
+            padding: 10px 14px;
+            background: transparent;
+            border-radius: 8px;
+            color: #bbb;
+            cursor: pointer;
+            text-align: left;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-weight: 500;
+            font-size: 0.9rem;
+            transition: 0.2s;
+        }
+
+        .room-btn.active {
+            background: rgba(168, 85, 247, 0.15);
+            color: #d8b4fe;
+            border-left: 3px solid #a855f7;
+        }
+
+        .room-btn:hover:not(.active) {
+            background: rgba(255, 255, 255, 0.04);
+            color: #fff;
+        }
+
+        /* Player Lateral */
+        .sidebar-player {
+            padding: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            background: rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .player-frame-box {
+            width: 100%;
+            height: 152px;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .player-frame-box iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* Main Chat Area */
+        .chat-main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #140f24;
+            position: relative;
+        }
+
+        .music-bar {
+            padding: 12px 20px;
+            background: rgba(20, 15, 36, 0.95);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+        }
+
+        .track-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            overflow: hidden;
+        }
+
+        .disc-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #a855f7, #ec4899);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: rotateDisc 4s linear infinite;
+            animation-play-state: paused;
+        }
+
+        .disc-icon.playing {
+            animation-play-state: running;
+        }
+
+        @keyframes rotateDisc {
+            100% { transform: rotate(360deg); }
+        }
+
+        .track-text {
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .track-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .track-status {
+            font-size: 0.75rem;
+            color: #a855f7;
+        }
+
+        .btn-purple {
+            background: #a855f7;
+            color: #fff;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .btn-purple:hover {
+            background: #9333ea;
+        }
+
+        .messages-area {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .msg-bubble {
+            max-width: 65%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            word-break: break-word;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .msg-bubble.sent {
+            background: #7c3aed;
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+
+        .msg-bubble.received {
+            background: rgba(255, 255, 255, 0.06);
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+        }
+
+        .msg-bubble.system {
+            background: rgba(168, 85, 247, 0.12);
+            border: 1px solid rgba(168, 85, 247, 0.25);
+            align-self: center;
+            color: #d8b4fe;
+            font-size: 0.8rem;
+            text-align: center;
+            max-width: 80%;
+        }
+
+        .msg-author {
+            font-size: 0.7rem;
+            font-weight: bold;
+            color: #d8b4fe;
+            margin-bottom: 3px;
+        }
+
+        .msg-img {
+            max-width: 100%;
+            max-height: 280px;
+            border-radius: 8px;
+            margin-top: 6px;
+            cursor: pointer;
+        }
+
+        /* Input Controls */
+        .input-bar {
+            padding: 14px 20px;
+            background: rgba(0, 0, 0, 0.25);
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .input-text {
+            flex: 1;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: #fff;
+            outline: none;
+            font-size: 0.9rem;
+        }
+
+        .input-text:focus {
+            border-color: #a855f7;
+        }
+
+        .btn-icon {
+            padding: 10px 12px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .btn-icon:hover {
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        /* Modais */
+        .modal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            max-width: 480px;
+            background: #1a1430;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 14px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+            display: none;
+            flex-direction: column;
+            z-index: 100;
+            overflow: hidden;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-header {
+            padding: 14px 16px;
+            background: rgba(0, 0, 0, 0.25);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-body {
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .search-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.15s;
+        }
+
+        .search-item:hover {
+            background: rgba(168, 85, 247, 0.2);
+        }
+
+        .search-thumb {
+            width: 44px;
+            height: 44px;
+            border-radius: 6px;
+            object-fit: cover;
+        }
+
+        /* GIF Grid */
+        .gif-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            max-height: 320px;
+            overflow-y: auto;
+        }
+
+        .gif-thumb {
+            width: 100%;
+            height: 95px;
+            object-fit: cover;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .gif-thumb:hover {
+            opacity: 0.85;
+        }
+
+        #file-input { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="user-box">
+                <div class="user-meta">
+                    <div class="user-avatar" id="avatar-label">U</div>
+                    <div>
+                        <div id="user-display" style="font-weight: 600; font-size: 0.9rem;">Usuário</div>
+                        <div style="font-size: 0.75rem; color: #4ade80;">● Online</div>
+                    </div>
+                </div>
+                <button class="btn-small" id="change-name-btn">Alterar</button>
+            </div>
+
+            <div class="rooms-header">
+                <span>Salas</span>
+                <button class="btn-small" id="new-room-btn">+ Nova</button>
+            </div>
+
+            <div class="rooms-list" id="rooms-list"></div>
+
+            <div class="sidebar-player">
+                <div style="font-size: 0.75rem; color: #888;">Player de Música:</div>
+                <div class="player-frame-box" id="player-box">
+                    <div style="color: #666; font-size: 0.8rem; text-align: center; padding: 10px;">
+                        Nenhuma faixa tocando
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Area -->
+        <div class="chat-main">
+            <!-- Music Header -->
+            <div class="music-bar">
+                <div class="track-info">
+                    <div class="disc-icon" id="disc-icon">🎵</div>
+                    <div class="track-text">
+                        <div class="track-title" id="now-title">Nenhuma música tocando</div>
+                        <div class="track-status" id="now-status">Pesquise por nome ou use !play [música]</div>
+                    </div>
+                </div>
+                <button class="btn-purple" id="open-music-modal-btn">🔍 Pesquisar Música</button>
+            </div>
+
+            <div class="messages-area" id="messages-list"></div>
+
+            <div class="input-bar">
+                <label for="file-input" class="btn-icon" title="Enviar Foto">📷</label>
+                <input type="file" id="file-input" accept="image/*">
+
+                <button class="btn-icon" id="open-gif-btn" title="Buscar GIFs">GIF</button>
+
+                <input type="text" class="input-text" id="chat-input" placeholder="Digite uma mensagem ou !play [música]...">
+                <button class="btn-purple" id="send-msg-btn">Enviar</button>
+            </div>
+        </div>
+
+        <!-- Modal Música -->
+        <div class="modal" id="music-modal">
+            <div class="modal-header">
+                <span style="font-weight: 600;">Pesquisar Música / Artista</span>
+                <button class="btn-small" id="close-music-modal">✕</button>
+            </div>
+            <div class="modal-body">
+                <input type="text" class="input-text" id="music-query-input" placeholder="Digite cantor ou música (ex: Derek, Matuê, Funk)...">
+                <div id="music-results" style="display: flex; flex-direction: column; gap: 6px;"></div>
+            </div>
+        </div>
+
+        <!-- Modal GIF -->
+        <div class="modal" id="gif-modal">
+            <div class="modal-header">
+                <span style="font-weight: 600;">Pesquisar GIFs</span>
+                <button class="btn-small" id="close-gif-modal">✕</button>
+            </div>
+            <div class="modal-body">
+                <input type="text" class="input-text" id="gif-query-input" placeholder="Buscar memes, risadas, reações...">
+                <div class="gif-grid" id="gif-results"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK Modular -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, doc, setDoc, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBssYjaxYYKih7FCTr4h-gxfL2B8042f-s",
+            authDomain: "mamis-1.firebaseapp.com",
+            projectId: "mamis-1",
+            storageBucket: "mamis-1.firebasestorage.app",
+            messagingSenderId: "503315313692",
+            appId: "1:503315313692:web:bbde1bec29dc5144511bd9",
+            measurementId: "G-B23KRJSWRZ"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const messagesCol = collection(db, "mensagens");
+        const roomsCol = collection(db, "salas");
+
+        let username = localStorage.getItem("chat_user") || "Amigo_" + Math.floor(Math.random() * 900 + 100);
+        let activeRoom = "geral";
+        let roomData = {};
+        let currentLoadedEmbed = null;
+
+        const userDisplay = document.getElementById("user-display");
+        const avatarLabel = document.getElementById("avatar-label");
+        const messagesList = document.getElementById("messages-list");
+        const chatInput = document.getElementById("chat-input");
+        const sendMsgBtn = document.getElementById("send-msg-btn");
+        const roomsList = document.getElementById("rooms-list");
+        const playerBox = document.getElementById("player-box");
+        const nowTitle = document.getElementById("now-title");
+        const nowStatus = document.getElementById("now-status");
+        const discIcon = document.getElementById("disc-icon");
+
+        // Modais
+        const musicModal = document.getElementById("music-modal");
+        const musicQueryInput = document.getElementById("music-query-input");
+        const musicResults = document.getElementById("music-results");
+        const gifModal = document.getElementById("gif-modal");
+        const gifQueryInput = document.getElementById("gif-query-input");
+        const gifResults = document.getElementById("gif-results");
+        const fileInput = document.getElementById("file-input");
+
+        function updateProfile() {
+            userDisplay.innerText = username;
+            avatarLabel.innerText = username.charAt(0).toUpperCase();
+            localStorage.setItem("chat_user", username);
+        }
+        updateProfile();
+
+        document.getElementById("change-name-btn").onclick = () => {
+            const novo = prompt("Seu novo nome:", username);
+            if (novo && novo.trim()) {
+                username = novo.trim();
+                updateProfile();
+            }
+        };
+
+        // 1. Gerenciamento de Salas
+        onSnapshot(roomsCol, (snapshot) => {
+            roomData = { "geral": { name: "geral", password: "" } };
+            snapshot.forEach(d => { roomData[d.id] = d.data(); });
+            renderRooms();
+        });
+
+        function renderRooms() {
+            roomsList.innerHTML = "";
+            for (let id in roomData) {
+                const r = roomData[id];
+                const btn = document.createElement("button");
+                btn.className = `room-btn ${id === activeRoom ? "active" : ""}`;
+                btn.innerHTML = `<span># ${r.name}</span><span>${r.password ? "🔒" : ""}</span>`;
+                btn.onclick = () => joinRoom(id);
+                roomsList.appendChild(btn);
+            }
+        }
+
+        function joinRoom(id) {
+            const r = roomData[id];
+            if (!r) return;
+            if (r.password) {
+                const pass = prompt(`Senha para entrar em #${r.name}:`);
+                if (pass !== r.password) {
+                    alert("Senha incorreta!");
+                    return;
+                }
+            }
+            activeRoom = id;
+            renderRooms();
+            listenMessages();
+            listenMusic();
+        }
+
+        document.getElementById("new-room-btn").onclick = async () => {
+            const name = prompt("Nome da nova sala:");
+            if (!name || !name.trim()) return;
+            const pwd = prompt("Senha (deixe em branco para pública):") || "";
+            const id = name.trim().toLowerCase().replace(/\s+/g, '-');
+            await setDoc(doc(db, "salas", id), { name: name.trim(), password: pwd.trim() });
+            joinRoom(id);
+        };
+
+        // 2. Busca e Reprodução de Músicas (Apple/Spotify Embeds Confiáveis)
+        let musicTimer;
+        musicQueryInput.oninput = () => {
+            clearTimeout(musicTimer);
+            musicTimer = setTimeout(() => searchTracks(musicQueryInput.value.trim()), 250);
+        };
+
+        document.getElementById("open-music-modal-btn").onclick = () => {
+            musicModal.classList.add("active");
+            musicQueryInput.focus();
+        };
+        document.getElementById("close-music-modal").onclick = () => musicModal.classList.remove("active");
+
+        async function searchTracks(query) {
+            if (!query) {
+                musicResults.innerHTML = '<div style="color: #666; font-size: 0.85rem; text-align: center;">Digite o nome da faixa...</div>';
+                return;
+            }
+            musicResults.innerHTML = '<div style="color: #888; font-size: 0.85rem; text-align: center;">Pesquisando faixas...</div>';
+
+            try {
+                const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&entity=song&limit=10`);
+                const json = await res.json();
+                const items = json.results || [];
+
+                musicResults.innerHTML = "";
+                items.forEach(track => {
+                    const div = document.createElement("div");
+                    div.className = "search-item";
+                    div.innerHTML = `
+                        <img class="search-thumb" src="${track.artworkUrl100}">
+                        <div style="flex:1; overflow:hidden;">
+                            <div style="font-size:0.85rem; font-weight:600; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">${track.trackName}</div>
+                            <div style="font-size:0.75rem; color:#a855f7;">${track.artistName}</div>
+                        </div>
+                    `;
+                    div.onclick = () => {
+                        const embedUrl = `https://open.spotify.com/embed/search/${encodeURIComponent(track.trackName + ' ' + track.artistName)}?utm_source=generator&theme=0`;
+                        setTrackSync(embedUrl, `${track.trackName} - ${track.artistName}`);
+                        musicModal.classList.remove("active");
+                    };
+                    musicResults.appendChild(div);
+                });
+            } catch (err) {
+                musicResults.innerHTML = `
+                    <button class="btn-purple" style="width: 100%;" onclick="window.directSearchPlay('${query}')">Tocar "${query}"</button>
+                `;
+            }
+        }
+
+        window.directSearchPlay = (query) => {
+            const embedUrl = `https://open.spotify.com/embed/search/${encodeURIComponent(query)}?utm_source=generator&theme=0`;
+            setTrackSync(embedUrl, query);
+            musicModal.classList.remove("active");
+        };
+
+        async function setTrackSync(embedUrl, title) {
+            await setDoc(doc(db, "musica_sync", activeRoom), {
+                embedUrl: embedUrl,
+                title: title,
+                requestedBy: username,
+                timestamp: Date.now()
+            });
+
+            await addDoc(messagesCol, {
+                room: activeRoom,
+                user: "🤖 DJ Bot",
+                text: `🎶 Colocou para tocar: **${title}** para todos na sala!`,
+                image: null,
+                isSystem: true,
+                createdAt: Date.now()
+            });
+        }
+
+        let unsubMusic = null;
+        function listenMusic() {
+            if (unsubMusic) unsubMusic();
+            unsubMusic = onSnapshot(doc(db, "musica_sync", activeRoom), (snapshot) => {
+                if (!snapshot.exists()) {
+                    nowTitle.innerText = "Nenhuma música tocando";
+                    nowStatus.innerText = "Pesquise por nome ou use !play [música]";
+                    discIcon.classList.remove("playing");
+                    playerBox.innerHTML = '<div style="color: #666; font-size: 0.8rem; text-align: center; padding: 10px;">Nenhuma faixa tocando</div>';
+                    currentLoadedEmbed = null;
+                    return;
+                }
+                const data = snapshot.data();
+                nowTitle.innerText = data.title;
+                nowStatus.innerText = `Sintonizado por: ${data.requestedBy}`;
+                discIcon.classList.add("playing");
+
+                if (currentLoadedEmbed !== data.embedUrl) {
+                    currentLoadedEmbed = data.embedUrl;
+                    playerBox.innerHTML = `<iframe src="${data.embedUrl}" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>`;
+                }
+            });
+        }
+
+        // 3. GIFs
+        const GIPHY_KEY = "GlVGYHkr3WSBnllca54iNt0yFbjz7L65";
+        document.getElementById("open-gif-btn").onclick = () => {
+            gifModal.classList.add("active");
+            searchGifs("memes");
+        };
+        document.getElementById("close-gif-modal").onclick = () => gifModal.classList.remove("active");
+
+        let gifTimer;
+        gifQueryInput.oninput = () => {
+            clearTimeout(gifTimer);
+            gifTimer = setTimeout(() => searchGifs(gifQueryInput.value.trim() || "memes"), 250);
+        };
+
+        async function searchGifs(q) {
+            gifResults.innerHTML = '<div style="grid-column: span 2; text-align:center; color:#888; font-size:0.8rem;">Carregando...</div>';
+            try {
+                const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(q)}&limit=12&rating=g`);
+                const { data } = await res.json();
+                gifResults.innerHTML = "";
+                data.forEach(item => {
+                    const img = document.createElement("img");
+                    img.className = "gif-thumb";
+                    img.src = item.images.fixed_height_small.url;
+                    img.onclick = () => {
+                        sendMessage(null, item.images.original.url);
+                        gifModal.classList.remove("active");
+                    };
+                    gifResults.appendChild(img);
+                });
+            } catch (e) {
+                gifResults.innerHTML = '<div style="grid-column: span 2; text-align:center; color:#ec4899; font-size:0.8rem;">Erro ao carregar GIFs.</div>';
+            }
+        }
+
+        // 4. Envio de Imagens e Chat
+        fileInput.onchange = () => {
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement("canvas");
+                        let w = img.width, h = img.height;
+                        const max = 800;
+                        if (w > max || h > max) {
+                            if (w > h) { h = Math.round((h * max) / w); w = max; }
+                            else { w = Math.round((w * max) / h); h = max; }
+                        }
+                        canvas.width = w; canvas.height = h;
+                        const ctx = canvas.getContext("2d");
+                        ctx.drawImage(img, 0, 0, w, h);
+                        sendMessage(null, canvas.toDataURL("image/jpeg", 0.7));
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        };
+
+        // Copiar e Colar Imagem
+        window.addEventListener('paste', (e) => {
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            for (let item of items) {
+                if (item.type.indexOf('image') !== -1) {
+                    const blob = item.getAsFile();
+                    const reader = new FileReader();
+                    reader.onload = (evt) => sendMessage(null, evt.target.result);
+                    reader.readAsDataURL(blob);
+                }
+            }
+        });
+
+        async function sendMessage(text, imgUrl) {
+            if (!text && !imgUrl) return;
+            await addDoc(messagesCol, {
+                room: activeRoom,
+                user: username,
+                text: text || null,
+                image: imgUrl || null,
+                createdAt: Date.now()
+            });
+        }
+
+        function handleSend() {
+            const val = chatInput.value.trim();
+            if (!val) return;
+            chatInput.value = "";
+
+            if (val.startsWith("!play ")) {
+                const q = val.replace("!play ", "").trim();
+                const embedUrl = `https://open.spotify.com/embed/search/${encodeURIComponent(q)}?utm_source=generator&theme=0`;
+                setTrackSync(embedUrl, q);
+                return;
+            }
+
+            sendMessage(val, null);
+        }
+
+        sendMsgBtn.onclick = handleSend;
+        chatInput.onkeypress = (e) => { if (e.key === "Enter") handleSend(); };
+
+        // 5. Listener de Mensagens
+        let unsubMessages = null;
+        function listenMessages() {
+            if (unsubMessages) unsubMessages();
+            messagesList.innerHTML = "";
+            unsubMessages = onSnapshot(messagesCol, (snapshot) => {
+                const msgs = [];
+                snapshot.forEach(docSnap => {
+                    const data = docSnap.data();
+                    if ((data.room || "geral") === activeRoom) {
+                        msgs.push(data);
+                    }
+                });
+                msgs.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+
+                messagesList.innerHTML = "";
+                msgs.forEach(m => {
+                    const div = document.createElement("div");
+                    if (m.isSystem) {
+                        div.className = "msg-bubble system";
+                    } else {
+                        div.className = `msg-bubble ${m.user === username ? "sent" : "received"}`;
+                        const author = document.createElement("div");
+                        author.className = "msg-author";
+                        author.innerText = m.user;
+                        div.appendChild(author);
+                    }
+
+                    if (m.text) {
+                        const span = document.createElement("span");
+                        span.innerHTML = m.text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+                        div.appendChild(span);
+                    }
+                    if (m.image) {
+                        const img = document.createElement("img");
+                        img.className = "msg-img";
+                        img.src = m.image;
+                        img.onclick = () => window.open(m.image, "_blank");
+                        div.appendChild(img);
+                    }
+                    messagesList.appendChild(div);
+                });
+                messagesList.scrollTop = messagesList.scrollHeight;
+            });
+        }
+
+        // Início
+        joinRoom("geral");
+    </script>
+</body>
+</html>
