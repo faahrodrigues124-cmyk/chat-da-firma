@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nova guia</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0b0914, #17102e);
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .chat-container {
+            display: flex;
+            width: 95vw;
+            max-width: 1300px;
+            height: 90vh;
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+            position: relative;
+        }
+
+        .drag-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(168, 85, 247, 0.25);
+            backdrop-filter: blur(8px);
+            border: 3px dashed #a855f7;
+            border-radius: 20px;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            font-size: 1.5rem;
+            font-weight: bold;
+            pointer-events: none;
+        }
+
+        .sidebar {
+            width: 320px;
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(0, 0, 0, 0.25);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .user-profile {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #a855f7, #ec4899);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.1rem;
+            box-shadow: 0 0 15px rgba(168, 85, 247, 0.4);
+        }
+
+        .edit-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            color: #ddd;
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: 0.2s;
+        }
+
+        .edit-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+
+        .rooms-header {
+            padding: 16px 20px 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .rooms-list {
+            flex: 1;
+            padding: 10px 14px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .room-item {
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-left: 3px solid transparent;
+        }
+
+        .room-item.active {
+            background: rgba(168, 85, 247, 0.15);
+            border-left-color: #a855f7;
+            color: #d8b4fe;
+        }
+
+        .room-item:hover:not(.active) {
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        /* Rádio WebRTC: o YouTube fica invisível e só o DJ o utiliza como fonte. */
+        .player-visual-box {
+            padding: 12px 14px;
+            background: rgba(0, 0, 0, 0.35);
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .radio-status {
+            font-size: 0.78rem;
+            color: #c4b5fd;
+            line-height: 1.35;
+        }
+
+        #radio-dj-btn {
+            width: 100%;
+            padding: 9px 10px;
+            border: 0;
+            border-radius: 9px;
+            background: #a855f7;
+            color: #fff;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        #youtube-player {
+            width: 200px;
+            height: 200px;
+            border-radius: 12px;
+            background: #000;
+            overflow: hidden;
+        }
+
+        /* Player Bar Sincronizado */
+        .music-player-bar {
+            padding: 12px 20px;
+            background: rgba(15, 12, 30, 0.85);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            z-index: 10;
+        }
+
+        .music-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .music-disc {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #ec4899, #8b5cf6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            animation: spin 4s linear infinite;
+            animation-play-state: paused;
+        }
+
+        .music-disc.playing {
+            animation-play-state: running;
+        }
+
+        @keyframes spin {
+            100% { transform: rotate(360deg); }
+        }
+
+        .music-title-wrap {
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .music-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .music-status {
+            font-size: 0.75rem;
+            color: #a855f7;
+        }
+
+        .music-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .music-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+
+        .music-btn:hover {
+            background: #a855f7;
+        }
+
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: rgba(0, 0, 0, 0.15);
+            position: relative;
+        }
+
+        .chat-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(0, 0, 0, 0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .messages-container {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .message {
+            max-width: 65%;
+            padding: 12px 18px;
+            border-radius: 14px;
+            line-height: 1.4;
+            display: flex;
+            flex-direction: column;
+            word-break: break-word;
+            position: relative;
+            animation: fadeIn 0.2s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.sent {
+            background: #7c3aed;
+            align-self: flex-end;
+            border-bottom-right-radius: 3px;
+        }
+
+        .message.received {
+            background: rgba(255, 255, 255, 0.08);
+            align-self: flex-start;
+            border-bottom-left-radius: 3px;
+        }
+
+        .message.system {
+            background: rgba(168, 85, 247, 0.15);
+            align-self: center;
+            max-width: 85%;
+            border: 1px solid rgba(168, 85, 247, 0.3);
+            text-align: center;
+            font-size: 0.85rem;
+            color: #d8b4fe;
+        }
+
+        .message-user {
+            font-size: 0.75rem;
+            color: #d8b4fe;
+            margin-bottom: 4px;
+            font-weight: bold;
+        }
+
+        .message-img {
+            max-width: 100%;
+            max-height: 320px;
+            border-radius: 10px;
+            margin-top: 6px;
+            object-fit: cover;
+            cursor: pointer;
+        }
+
+        /* Modal de Busca de Músicas */
+        .music-search-modal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            max-width: 520px;
+            max-height: 540px;
+            background: #181230;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+            display: none;
+            flex-direction: column;
+            z-index: 200;
+            overflow: hidden;
+        }
+
+        .music-search-modal.active {
+            display: flex;
+        }
+
+        .music-modal-header {
+            padding: 16px;
+            background: rgba(0, 0, 0, 0.25);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .music-modal-header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .music-modal-header input {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            outline: none;
+            font-size: 0.95rem;
+        }
+
+        .music-results-list {
+            flex: 1;
+            padding: 12px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .music-item-result {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .music-item-result:hover {
+            background: rgba(168, 85, 247, 0.2);
+            transform: translateX(4px);
+        }
+
+        .music-item-thumb {
+            width: 54px;
+            height: 40px;
+            border-radius: 6px;
+            object-fit: cover;
+        }
+
+        .music-item-info {
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .music-item-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .music-item-author {
+            font-size: 0.75rem;
+            color: #a855f7;
+        }
+
+        /* Painel GIF */
+        .gif-modal {
+            position: absolute;
+            bottom: 85px;
+            left: 24px;
+            width: 420px;
+            height: 460px;
+            background: #181230;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            display: none;
+            flex-direction: column;
+            z-index: 50;
+            overflow: hidden;
+        }
+
+        .gif-modal.active {
+            display: flex;
+        }
+
+        .gif-header {
+            padding: 14px;
+            background: rgba(0, 0, 0, 0.25);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .gif-header input {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            outline: none;
+            font-size: 0.9rem;
+        }
+
+        .gif-categories {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+
+        .gif-cat-tag {
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            color: #ddd;
+            padding: 5px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: 0.2s;
+        }
+
+        .gif-cat-tag:hover {
+            background: #a855f7;
+            color: #fff;
+        }
+
+        .gif-grid {
+            flex: 1;
+            padding: 12px;
+            overflow-y: auto;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .gif-item {
+            width: 100%;
+            height: 110px;
+            object-fit: cover;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+            background: rgba(255,255,255,0.05);
+        }
+
+        .gif-item:hover {
+            transform: scale(1.03);
+            filter: brightness(1.1);
+        }
+
+        .input-area-wrapper {
+            padding: 16px 24px;
+            background: rgba(0, 0, 0, 0.35);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .file-preview {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            width: fit-content;
+        }
+
+        .file-preview span.remove-btn {
+            color: #ec4899;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .input-area input[type="text"] {
+            flex: 1;
+            padding: 14px 18px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: #fff;
+            outline: none;
+            transition: 0.2s;
+        }
+
+        .input-area input[type="text"]:focus {
+            border-color: #a855f7;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .tool-btn {
+            padding: 12px 14px;
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            cursor: pointer;
+            transition: 0.2s;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .tool-btn:hover {
+            background: rgba(255, 255, 255, 0.18);
+        }
+
+        .send-btn {
+            padding: 12px 24px;
+            background: #a855f7;
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .send-btn:hover {
+            background: #9333ea;
+        }
+
+        #file-input {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="chat-container" id="drop-zone">
+        <div class="drag-overlay" id="drag-overlay">Solte ou cole sua imagem aqui 📸</div>
+
+        <!-- Lateral -->
+        <div class="sidebar">
+            <div class="user-profile">
+                <div class="user-info">
+                    <div class="avatar" id="user-avatar">U</div>
+                    <div>
+                        <h4 id="username-display">Usuário</h4>
+                        <span style="font-size: 0.75rem; color: #4ade80;">● Online</span>
+                    </div>
+                </div>
+                <button class="edit-btn" id="change-user-btn">Alterar</button>
+            </div>
+
+            <div class="rooms-header">
+                <span>Salas</span>
+                <button class="edit-btn" id="create-room-btn">+ Nova Sala</button>
+            </div>
+
+            <div class="rooms-list" id="rooms-list"></div>
+
+            <!-- Rádio compartilhada por WebRTC -->
+            <div class="player-visual-box">
+                <div style="font-size: 0.75rem; color: #aaa;">🎧 Rádio da sala</div>
+                <div class="radio-status" id="radio-status">Conectando à rádio...</div>
+                <button id="radio-dj-btn">🔊 Ativar áudio</button>
+                <div id="media-player-container"><div id="youtube-player"></div></div>
+            </div>
+        </div>
+
+        <!-- Área Principal -->
+        <div class="chat-area">
+            <!-- Barra de Música Sincronizada -->
+            <div class="music-player-bar">
+                <div class="music-info">
+                    <div class="music-disc" id="music-disc">🎵</div>
+                    <div class="music-title-wrap">
+                        <div class="music-title" id="now-playing-title">Nenhuma música tocando</div>
+                        <div class="music-status" id="now-playing-status">Pesquise qualquer música ou artista</div>
+                    </div>
+                </div>
+                <div class="music-controls">
+                    <button class="music-btn" id="add-track-btn" style="background: #a855f7;">🔍 Pesquisar Música</button>
+                </div>
+            </div>
+
+            <div class="chat-header">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <h3 id="current-room-title"># geral</h3>
+                </div>
+                <span style="font-size: 0.8rem; color: rgba(255,255,255,0.5);">Pesquise direto ou use <b>!play nome</b></span>
+            </div>
+            
+            <div class="messages-container" id="messages"></div>
+
+            <!-- Modal de Busca de Música -->
+            <div class="music-search-modal" id="music-modal">
+                <div class="music-modal-header">
+                    <div class="music-modal-header-top">
+                        <h4 style="font-size: 0.95rem;">Buscar Qualquer Música</h4>
+                        <button class="edit-btn" id="close-music-modal">✕ Fechar</button>
+                    </div>
+                    <input type="text" id="music-search-input" placeholder="Digite cantor ou música (ex: Derek, Matuê, Sertanejo, Funk)...">
+                </div>
+                <div class="music-results-list" id="music-results">
+                    <p style="padding: 15px; color: #aaa; text-align: center; font-size: 0.85rem;">Digite para pesquisar...</p>
+                </div>
+            </div>
+
+            <!-- Modal GIF Integrado -->
+            <div class="gif-modal" id="gif-modal">
+                <div class="gif-header">
+                    <input type="text" id="gif-search" placeholder="Buscar qualquer GIF...">
+                    <div class="gif-categories">
+                        <button class="gif-cat-tag" data-q="memes">😂 Memes</button>
+                        <button class="gif-cat-tag" data-q="musica">🎧 Música</button>
+                        <button class="gif-cat-tag" data-q="risada">🤣 Risada</button>
+                        <button class="gif-cat-tag" data-q="futebol">⚽ Futebol</button>
+                        <button class="gif-cat-tag" data-q="anime">⚡ Anime</button>
+                        <button class="gif-cat-tag" data-q="danca">💃 Dança</button>
+                    </div>
+                </div>
+                <div class="gif-grid" id="gif-grid"></div>
+            </div>
+
+            <!-- Input -->
+            <div class="input-area-wrapper">
+                <div class="file-preview" id="file-preview">
+                    <span id="file-preview-name">📸 Imagem carregada</span>
+                    <span class="remove-btn" id="remove-file-btn">✕</span>
+                </div>
+                <div class="input-area">
+                    <label for="file-input" class="tool-btn" title="Enviar Imagem">📷</label>
+                    <input type="file" id="file-input" accept="image/*">
+
+                    <button class="tool-btn" id="toggle-gif-btn" title="Buscar GIFs">GIF</button>
+                    
+                    <input type="text" id="message-input" placeholder="Digite uma mensagem ou !play [nome]...">
+                    <button class="send-btn" id="send-button">Enviar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- YouTube Iframe API Oficial -->
+    <script src="https://www.youtube.com/iframe_api"></script>
+
+    <!-- Firebase -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import {
+            getFirestore, collection, doc, setDoc, addDoc, onSnapshot,
+            deleteDoc, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBssYjaxYYKih7FCTr4h-gxfL2B8042f-s",
+            authDomain: "mamis-1.firebaseapp.com",
+            projectId: "mamis-1",
+            storageBucket: "mamis-1.firebasestorage.app",
+            messagingSenderId: "503315313692",
+            appId: "1:503315313692:web:bbde1bec29dc5144511bd9",
+            measurementId: "G-B23KRJSWRZ"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const messagesCol = collection(db, "mensagens");
+        const roomsCol = collection(db, "salas");
+
+        let meuNome = localStorage.getItem("chat_username") || "Amigo_" + Math.floor(Math.random() * 1000);
+        let currentRoom = "geral";
+        let availableRooms = {};
+        let selectedFileBase64 = null;
+        let unsubscribeMessages = null;
+        let unsubscribeMusic = null;
+
+        let ytPlayer = null;
+        let isPlayerReady = false;
+        let youtubeApiReady = false;
+        let radioState = null;
+        let pendingRadioState = null;
+        let lastLoadedVideoId = "";
+        let syncTimer = null;
+        let audioUnlocked = false;
+
+        const messagesContainer = document.getElementById('messages');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const fileInput = document.getElementById('file-input');
+        const filePreview = document.getElementById('file-preview');
+        const filePreviewName = document.getElementById('file-preview-name');
+        const removeFileBtn = document.getElementById('remove-file-btn');
+        const currentRoomTitle = document.getElementById('current-room-title');
+        const roomsList = document.getElementById('rooms-list');
+        const gifModal = document.getElementById('gif-modal');
+        const gifSearch = document.getElementById('gif-search');
+        const gifGrid = document.getElementById('gif-grid');
+        const dragOverlay = document.getElementById('drag-overlay');
+        const musicDisc = document.getElementById('music-disc');
+        const nowPlayingTitle = document.getElementById('now-playing-title');
+        const nowPlayingStatus = document.getElementById('now-playing-status');
+        const musicModal = document.getElementById('music-modal');
+        const musicSearchInput = document.getElementById('music-search-input');
+        const musicResults = document.getElementById('music-results');
+        const radioDJBtn = document.getElementById('radio-dj-btn');
+        const radioStatus = document.getElementById('radio-status');
+
+        function roomRadioDoc() {
+            return doc(db, "radio", currentRoom);
+        }
+
+        function updateRadioStatus(text) {
+            if (radioStatus) radioStatus.textContent = text;
+        }
+
+        function updateProfileUI() {
+            document.getElementById('username-display').innerText = meuNome;
+            document.getElementById('user-avatar').innerText = meuNome.charAt(0).toUpperCase();
+            localStorage.setItem("chat_username", meuNome);
+        }
+        updateProfileUI();
+
+        // ---------------- YouTube player ----------------
+        window.onYouTubeIframeAPIReady = () => {
+            youtubeApiReady = true;
+            createYouTubePlayer();
+        };
+
+        function createYouTubePlayer() {
+            if (!youtubeApiReady || ytPlayer) return;
+            const target = document.getElementById("youtube-player");
+            if (!target || !window.YT || !YT.Player) return;
+
+            ytPlayer = new YT.Player("youtube-player", {
+                width: "200",
+                height: "200",
+                videoId: "",
+                playerVars: {
+                    autoplay: 0,
+                    controls: 1,
+                    playsinline: 1,
+                    enablejsapi: 1,
+                    rel: 0,
+                    modestbranding: 1,
+                    origin: window.location.origin
+                },
+                events: {
+                    onReady: () => {
+                        isPlayerReady = true;
+                        if (pendingRadioState) applyRadioState(pendingRadioState, true);
+                    },
+                    onStateChange: (event) => {
+                        if (!radioState) return;
+                        if (event.data === YT.PlayerState.PLAYING) {
+                            musicDisc?.classList.add('playing');
+                            radioStatus && (radioStatus.textContent = `🔴 Rádio ao vivo • ${radioState.title || "música"}`);
+                        } else if (event.data === YT.PlayerState.ENDED) {
+                            musicDisc?.classList.remove('playing');
+                        }
+                    },
+                    onError: (event) => {
+                        const code = event?.data;
+                        updateRadioStatus(`⚠️ YouTube recusou esta faixa (erro ${code}). Escolha outra.`);
+                    }
+                }
+            });
+        }
+
+        // A maioria dos navegadores exige uma interação antes do primeiro áudio.
+        function unlockAudio() {
+            audioUnlocked = true;
+            if (ytPlayer && radioState?.videoId) {
+                try {
+                    ytPlayer.playVideo();
+                    setTimeout(() => syncPlayerToRadio(true), 300);
+                } catch (_) {}
+            }
+            updateRadioStatus(radioState?.title
+                ? `🔊 Rádio liberada • ${radioState.title}`
+                : "🔊 Rádio pronta");
+        }
+
+        function radioPosition(state) {
+            if (!state?.startedAt) return 0;
+            const started = typeof state.startedAt === "number"
+                ? state.startedAt
+                : (state.startedAt?.toMillis ? state.startedAt.toMillis() : Date.now());
+            return Math.max(0, (Date.now() - started) / 1000);
+        }
+
+        function syncPlayerToRadio(force = false) {
+            if (!ytPlayer || !isPlayerReady || !radioState?.videoId) return;
+            const expected = radioPosition(radioState);
+            if (radioState.playing === false) {
+                try { ytPlayer.pauseVideo(); } catch (_) {}
+                return;
+            }
+
+            let actual = 0;
+            try { actual = Number(ytPlayer.getCurrentTime?.() || 0); } catch (_) {}
+
+            if (force || lastLoadedVideoId !== radioState.videoId) {
+                try {
+                    ytPlayer.loadVideoById({
+                        videoId: radioState.videoId,
+                        startSeconds: expected
+                    });
+                    lastLoadedVideoId = radioState.videoId;
+                } catch (_) {
+                    try { ytPlayer.loadVideoById(radioState.videoId); } catch (__) {}
+                }
+                return;
+            }
+
+            const diff = expected - actual;
+            if (Math.abs(diff) > 1.25) {
+                try { ytPlayer.seekTo(Math.max(0, expected), true); } catch (_) {}
+            }
+            if (radioState.playing && audioUnlocked) {
+                try { ytPlayer.playVideo(); } catch (_) {}
+            }
+        }
+
+        function applyRadioState(state, force = false) {
+            radioState = state || null;
+            pendingRadioState = state || null;
+
+            const title = state?.title || "Nenhuma música tocando";
+            nowPlayingTitle && (nowPlayingTitle.textContent = title);
+            nowPlayingStatus && (nowPlayingStatus.textContent =
+                state?.startedBy ? `Rádio da sala • ${state.startedBy}` : "Escolha uma música para começar");
+            if (state?.title) musicDisc?.classList.add('playing');
+            else musicDisc?.classList.remove('playing');
+
+            if (!state?.videoId) {
+                updateRadioStatus("🎵 Rádio sem música • escolha uma faixa");
+                return;
+            }
+
+            updateRadioStatus(`🎵 ${state.title} • sincronizando...`);
+            if (isPlayerReady) syncPlayerToRadio(force);
+        }
+
+        function startRadioListener() {
+            if (unsubscribeMusic) unsubscribeMusic();
+            unsubscribeMusic = onSnapshot(roomRadioDoc(), snap => {
+                applyRadioState(snap.exists() ? snap.data() : null, true);
+            }, err => {
+                console.error("Rádio:", err);
+                updateRadioStatus("⚠️ Não foi possível sincronizar a rádio.");
+            });
+        }
+
+        if (radioDJBtn) {
+            radioDJBtn.textContent = "🔊 Ativar áudio";
+            radioDJBtn.onclick = unlockAudio;
+        }
+
+        // Corrige pequenos atrasos periodicamente.
+        if (syncTimer) clearInterval(syncTimer);
+        syncTimer = setInterval(() => {
+            if (radioState?.videoId && isPlayerReady) syncPlayerToRadio(false);
+        }, 1800);
+
+        // ---------------- Salas ----------------
+        onSnapshot(roomsCol, snapshot => {
+            availableRooms = { "geral": { name: "geral", password: "" } };
+            snapshot.forEach(d => availableRooms[d.id] = d.data());
+            renderRooms();
+        }, err => {
+            console.error("Salas:", err);
+        });
+
+        function renderRooms() {
+            roomsList.innerHTML = "";
+            Object.entries(availableRooms).forEach(([id, room]) => {
+                const div = document.createElement("div");
+                div.className = "room-item" + (id === currentRoom ? " active" : "");
+                div.innerHTML = `<span># ${escapeHtml(room.name || id)}${room.password ? " 🔒" : ""}</span>`;
+                div.onclick = () => tryJoinRoom(id);
+                roomsList.appendChild(div);
+            });
+            currentRoomTitle.innerText = `# ${availableRooms[currentRoom]?.name || currentRoom}`;
+        }
+
+        async function tryJoinRoom(roomId) {
+            const room = availableRooms[roomId];
+            if (!room) return;
+
+            if (room.password) {
+                const pass = prompt(`Digite a senha para entrar em #${room.name}:`);
+                if (pass !== room.password) {
+                    alert("Senha incorreta.");
+                    return;
+                }
+            }
+
+            currentRoom = roomId;
+            renderRooms();
+            listenMessages();
+            startRadioListener();
+        }
+
+        document.getElementById("create-room-btn").addEventListener("click", async () => {
+            const name = prompt("Nome da nova sala:");
+            if (!name?.trim()) return;
+
+            const password = prompt("Senha da sala (deixe vazio para pública):") || "";
+            const id = name.trim().toLowerCase()
+                .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+                .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+            if (!id) return alert("Nome de sala inválido.");
+
+            try {
+                await setDoc(doc(db, "salas", id), {
+                    name: name.trim(),
+                    password: password.trim(),
+                    createdAt: Date.now()
+                }, { merge: true });
+                await tryJoinRoom(id);
+            } catch (e) {
+                console.error(e);
+                alert("Não foi possível criar a sala. Verifique as regras do Firestore.");
+            }
+        });
+
+        // ---------------- Pesquisa YouTube ----------------
+        let searchMusicTimer;
+        musicSearchInput.addEventListener("input", () => {
+            clearTimeout(searchMusicTimer);
+            searchMusicTimer = setTimeout(() => searchYouTubeTracks(musicSearchInput.value.trim()), 350);
+        });
+
+        document.getElementById("add-track-btn").addEventListener("click", () => {
+            musicModal.classList.add("active");
+            musicSearchInput.focus();
+        });
+
+        document.getElementById("close-music-modal").addEventListener("click", () => {
+            musicModal.classList.remove("active");
+        });
+
+        async function searchYouTubeTracks(query) {
+            if (!query) {
+                musicResults.innerHTML = '<p style="padding:15px;color:#aaa;text-align:center">Digite uma música ou artista...</p>';
+                return;
+            }
+            musicResults.innerHTML = '<p style="padding:15px;color:#aaa;text-align:center">🔎 Procurando...</p>';
+
+            try {
+                const res = await fetch(`/.netlify/functions/youtube-search?q=${encodeURIComponent(query)}`);
+                const data = await res.json();
+                if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+
+                if (!data.items?.length) {
+                    musicResults.innerHTML = '<p style="padding:15px;color:#aaa;text-align:center">Nenhuma faixa compatível encontrada.</p>';
+                    return;
+                }
+
+                musicResults.innerHTML = "";
+                data.items.forEach(item => {
+                    const div = document.createElement("div");
+                    div.className = "music-item-result";
+                    div.innerHTML = `
+                        <img src="${escapeAttr(item.thumbnail || "")}" style="width:64px;height:44px;object-fit:cover;border-radius:7px">
+                        <div class="music-item-info">
+                            <div class="music-item-title">${escapeHtml(item.title || "Sem título")}</div>
+                            <div class="music-item-author">${escapeHtml(item.channelTitle || "YouTube")}</div>
+                        </div>`;
+                    div.onclick = () => selectTrackToPlay(item.videoId, item.title);
+                    musicResults.appendChild(div);
+                });
+            } catch (e) {
+                console.error("Busca YouTube:", e);
+                musicResults.innerHTML = `<p style="padding:15px;color:#ff8b8b;text-align:center">Falha na busca: ${escapeHtml(e.message)}</p>`;
+            }
+        }
+
+        async function selectTrackToPlay(videoId, title) {
+            if (!videoId) return;
+            try {
+                await setDoc(roomRadioDoc(), {
+                    videoId,
+                    title: title || "Música",
+                    startedAt: Date.now(),
+                    playing: true,
+                    startedBy: meuNome,
+                    room: currentRoom,
+                    updatedAt: serverTimestamp()
+                }, { merge: true });
+
+                musicModal.classList.remove("active");
+
+                try {
+                    await addDoc(messagesCol, {
+                        room: currentRoom,
+                        user: "🤖 Rádio",
+                        text: `🎶 **${meuNome}** colocou: **${title || "Música"}**`,
+                        image: null,
+                        isSystem: true,
+                        createdAt: Date.now()
+                    });
+                } catch (_) {}
+
+                // Carrega imediatamente neste cliente; os demais recebem pelo snapshot.
+                applyRadioState({
+                    videoId, title: title || "Música", startedAt: Date.now(),
+                    playing: true, startedBy: meuNome, room: currentRoom
+                }, true);
+            } catch (e) {
+                console.error("Trocar música:", e);
+                alert("Não foi possível trocar a música. Verifique o Firestore.");
+            }
+        }
+
+        // ---------------- Perfil ----------------
+        document.getElementById("change-user-btn").addEventListener("click", () => {
+            const novo = prompt("Escolha seu novo nome:", meuNome);
+            if (novo?.trim()) {
+                meuNome = novo.trim();
+                updateProfileUI();
+            }
+        });
+
+        // ---------------- GIFs / arquivos / drag & drop ----------------
+        function compressAndSetImage(fileOrBlob, label = "Imagem") {
+            const reader = new FileReader();
+            reader.onload = e => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement("canvas");
+                    let width = img.width, height = img.height, maxDim = 800;
+                    if (width > maxDim || height > maxDim) {
+                        if (width > height) {
+                            height = Math.round(height * maxDim / width);
+                            width = maxDim;
+                        } else {
+                            width = Math.round(width * maxDim / height);
+                            height = maxDim;
+                        }
+                    }
+                    canvas.width = width; canvas.height = height;
+                    canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+                    selectedFileBase64 = canvas.toDataURL("image/jpeg", 0.7);
+                    filePreviewName.innerText = `📸 ${label}`;
+                    filePreview.style.display = "flex";
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(fileOrBlob);
+        }
+
+        window.addEventListener("paste", e => {
+            const items = e.clipboardData?.items || [];
+            for (const item of items) {
+                if (item.type.startsWith("image/")) {
+                    compressAndSetImage(item.getAsFile(), "Imagem colada");
+                    break;
+                }
+            }
+        });
+
+        ["dragenter","dragover"].forEach(ev => window.addEventListener(ev, e => {
+            e.preventDefault();
+            dragOverlay.classList.add("active");
+        }));
+        ["dragleave","drop"].forEach(ev => window.addEventListener(ev, e => {
+            e.preventDefault();
+            dragOverlay.classList.remove("active");
+        }));
+        window.addEventListener("drop", e => {
+            const file = e.dataTransfer?.files?.[0];
+            if (file?.type.startsWith("image/")) compressAndSetImage(file, "Imagem arrastada");
+        });
+        fileInput.addEventListener("change", () => {
+            const file = fileInput.files?.[0];
+            if (file) compressAndSetImage(file);
+        });
+        removeFileBtn.addEventListener("click", () => {
+            selectedFileBase64 = null;
+            fileInput.value = "";
+            filePreview.style.display = "none";
+        });
+
+        // ---------------- GIF ----------------
+        document.getElementById("toggle-gif-btn").addEventListener("click", () => {
+            gifModal.classList.add("active");
+            loadGifs("funny");
+        });
+        document.getElementById("close-gif-modal").addEventListener("click", () => gifModal.classList.remove("active"));
+
+        async function loadGifs(query = "funny") {
+            gifGrid.innerHTML = '<p style="padding:15px;color:#aaa">Carregando GIFs...</p>';
+            try {
+                const r = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=3vVxLqV7WJjZ9Z7L6QqQnXQmG3qQnQn&limit=24&q=${encodeURIComponent(query)}`);
+                const data = await r.json();
+                gifGrid.innerHTML = "";
+                (data.data || []).forEach(g => {
+                    const img = document.createElement("img");
+                    img.src = g.images?.fixed_width?.url || g.images?.original?.url;
+                    img.className = "gif-item";
+                    img.onclick = async () => {
+                        gifModal.classList.remove("active");
+                        await enviarMensagemDireta(null, img.src);
+                    };
+                    gifGrid.appendChild(img);
+                });
+            } catch (_) {
+                gifGrid.innerHTML = '<p style="padding:15px;color:#aaa">Não foi possível carregar GIFs.</p>';
+            }
+        }
+
+        document.querySelectorAll(".gif-cat-tag").forEach(btn => {
+            btn.addEventListener("click", () => loadGifs(btn.dataset.q));
+        });
+        gifSearch.addEventListener("input", () => {
+            clearTimeout(window._gifTimer);
+            window._gifTimer = setTimeout(() => loadGifs(gifSearch.value.trim() || "funny"), 450);
+        });
+
+        // ---------------- Mensagens ----------------
+        function listenMessages() {
+            if (unsubscribeMessages) unsubscribeMessages();
+            unsubscribeMessages = onSnapshot(messagesCol, snapshot => {
+                const msgs = snapshot.docs
+                    .map(d => ({ id: d.id, ...d.data() }))
+                    .filter(m => m.room === currentRoom)
+                    .sort((a,b) => (a.createdAt || 0) - (b.createdAt || 0))
+                    .slice(-150);
+
+                messagesContainer.innerHTML = "";
+                msgs.forEach(m => renderMessage(m.user, m.text, m.image, m.user === meuNome, m.isSystem));
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }, err => {
+                console.error("Mensagens:", err);
+                messagesContainer.innerHTML = `<div style="padding:20px;color:#ff8b8b">⚠️ Chat indisponível: ${escapeHtml(err.message)}</div>`;
+            });
+        }
+
+        function renderMessage(sender, text, imgUrl, isSent, isSystem = false) {
+            const div = document.createElement("div");
+            if (isSystem) {
+                div.className = "system-message";
+                div.innerHTML = escapeHtml((text || "").replace(/\*\*/g, ""));
+                messagesContainer.appendChild(div);
+                return;
+            }
+            div.className = `message ${isSent ? "sent" : "received"}`;
+            const safeText = text ? escapeHtml(text).replace(/\n/g, "<br>") : "";
+            div.innerHTML = `
+                <div class="message-bubble">
+                    ${!isSent ? `<div class="message-sender">${escapeHtml(sender || "Amigo")}</div>` : ""}
+                    ${safeText}
+                    ${imgUrl ? `<img src="${escapeAttr(imgUrl)}" style="max-width:260px;border-radius:10px;margin-top:7px;display:block">` : ""}
+                </div>`;
+            messagesContainer.appendChild(div);
+        }
+
+        async function enviarMensagemDireta(text, imageUrl) {
+            if (!text && !imageUrl) return;
+            try {
+                await addDoc(messagesCol, {
+                    room: currentRoom,
+                    user: meuNome,
+                    text: text || null,
+                    image: imageUrl || null,
+                    createdAt: Date.now()
+                });
+            } catch (e) {
+                console.error("Enviar mensagem:", e);
+                alert(`Erro ao enviar mensagem: ${e.message}`);
+            }
+        }
+
+        async function handleSend() {
+            const text = messageInput.value.trim();
+            const img = selectedFileBase64;
+            if (!text && !img) return;
+
+            messageInput.value = "";
+            selectedFileBase64 = null;
+            fileInput.value = "";
+            filePreview.style.display = "none";
+
+            if (text.toLowerCase().startsWith("!play ")) {
+                const q = text.slice(6).trim();
+                musicModal.classList.add("active");
+                musicSearchInput.value = q;
+                searchYouTubeTracks(q);
+                return;
+            }
+            await enviarMensagemDireta(text, img);
+        }
+
+        function escapeHtml(v) {
+            return String(v ?? "").replace(/[&<>"']/g, c => ({
+                "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+            }[c]));
+        }
+        function escapeAttr(v) {
+            return escapeHtml(v).replace(/`/g, "&#096;");
+        }
+
+        // Inicia a sala padrão.
+        tryJoinRoom("geral");
+    </script>
+</body>
+</html>
