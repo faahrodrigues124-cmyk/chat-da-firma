@@ -1,0 +1,33 @@
+SALA SONORA — VERSÃO 2026
+
+Esta versão mantém o projeto em Cloudflare Workers + Durable Objects e não exige trocar a arquitetura.
+
+MELHORIAS:
+- Chat com envio mais seguro: a mensagem não é apagada do campo se o WebSocket estiver desconectado.
+- Reconexão automática com espera progressiva.
+- Sons de notificação para mensagens novas e troca de música.
+- Botão moderno para ligar/desligar sons.
+- Reações modernas: 👍 ❤️ 😂 🔥.
+- Ícones SVG no lugar dos símbolos antigos em partes da interface.
+- Player evita recarregar a mesma faixa quando alguém apenas adiciona música à fila.
+- Pausa/retomada preserva a posição sincronizada da música.
+- Fila continua compartilhada pela sala.
+- Login persistente.
+- FAB continua administrador.
+- Ajustes continuam permitindo alterar nome de exibição e, para FAB, o nome do site.
+- Título da aba permanece “Nova guia”.
+- Administração de salas e limpeza continuam disponíveis.
+
+IMPORTANTE SOBRE O DEPLOY:
+1. Não apague as migrations do wrangler.json.
+2. Mantenha o secret CHAVE_API_DO_YOUTUBE configurado no Cloudflare.
+3. Com o Git conectado, basta fazer commit/push dos arquivos.
+4. O comando de deploy continua: npx wrangler deploy
+5. Se o Cloudflare disser que CHAVE_API_DO_YOUTUBE não existe, isso é configuração de Secret do Worker, não erro do código.
+
+ARQUIVOS PRINCIPAIS:
+- public/index.html
+- public/style.css
+- public/app.js
+- src/index.js
+- wrangler.json
