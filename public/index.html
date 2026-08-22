@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#08090d">
-  <title>Sala Sonora</title>
+  <title>Nova guia</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,7 +14,7 @@
     <div class="auth-glow glow-a"></div><div class="auth-glow glow-b"></div>
     <div class="auth-card">
       <div class="logo-mark">S</div>
-      <div class="brand">SALA <span>SONORA</span></div>
+      <div class="brand"><span id="auth-site-name">CHAT DA FIRMA</span></div>
       <div class="auth-kicker">PRIVATE LISTENING SPACE</div>
       <h1 id="auth-title">Entrar</h1>
       <p id="auth-subtitle">Entre para conversar e ouvir música com a sala.</p>
@@ -59,6 +59,21 @@
     <div id="queue-list" class="queue-list"></div>
   </div></div>
 
+  <div id="settings-modal" class="overlay hidden"><div class="modal settings-modal">
+    <button class="modal-close" id="settings-close">×</button>
+    <div class="kicker">PREFERÊNCIAS</div><h2>Ajustes</h2><p>Personalize como você aparece e, se for administrador, o nome do site.</p>
+    <label>Seu nome de exibição<input id="display-name-input" maxlength="30" placeholder="Como os outros verão você"></label>
+    <div class="settings-note">Seu usuário de login continua o mesmo. Apenas o nome mostrado no chat muda.</div>
+    <div id="site-settings-wrap" class="hidden">
+      <div class="settings-divider"></div>
+      <div class="field-label">Identidade do site</div>
+      <label>Nome do site<input id="site-name-input" maxlength="40" placeholder="Chat da Firma"></label>
+      <div class="settings-note">Esse nome aparece dentro do aplicativo. A guia do navegador continuará como <strong>Nova guia</strong>.</div>
+    </div>
+    <div class="modal-actions"><button id="settings-save" class="primary">Salvar alterações</button></div>
+    <div id="settings-error" class="form-error"></div>
+  </div></div>
+
   <div id="admin-modal" class="overlay hidden"><div class="modal admin-modal">
     <button class="modal-close" id="admin-close">×</button>
     <div class="kicker">ADMIN / FAB</div><h2>Controle da comunidade</h2><p>Gerencie salas e histórico do servidor.</p>
@@ -68,11 +83,11 @@
 
   <div id="app" class="app hidden">
     <aside class="sidebar">
-      <div class="sidebar-head"><div class="brand-mini"><span class="brand-square">S</span><div><strong>Sala Sonora</strong><small>listen together</small></div></div><button id="mobile-menu" class="icon-button">☰</button></div>
+      <div class="sidebar-head"><div class="brand-mini"><span class="brand-square" id="brand-mark">C</span><div><strong id="site-name">Chat da Firma</strong><small>conversa + música</small></div></div><button id="mobile-menu" class="icon-button">☰</button></div>
       <div class="profile-card"><div id="user-avatar" class="avatar"></div><div class="profile-copy"><strong id="user-name">—</strong><span><i></i><em id="user-role">online</em></span></div><button id="logout" class="logout">Sair</button></div>
       <div class="side-label"><span>SEUS ESPAÇOS</span><button id="new-room" class="plus-button" title="Nova sala">+</button></div>
       <nav id="rooms" class="rooms"></nav>
-      <button id="admin-open" class="admin-button hidden">Administração <span>⌘</span></button>
+      <button id="settings-open" class="settings-button">Ajustes <span>⚙</span></button><button id="admin-open" class="admin-button hidden">Administração <span>⌘</span></button>
       <div class="sidebar-bottom"><span>Cloud radio</span><span class="live-pill"><i></i> LIVE</span></div>
     </aside>
 

@@ -13,6 +13,7 @@ const roomModal=$("room-modal"), roomName=$("room-name"), roomPrivate=$("room-pr
 const passwordModal=$("password-modal"), roomEnterPass=$("room-enter-pass"), passwordError=$("password-error");
 const musicModal=$("music-modal"), musicSearch=$("music-search"), musicResults=$("music-results"), musicStatus=$("music-status");
 const queueModal=$("queue-modal"), queueList=$("queue-list"), adminModal=$("admin-modal"), adminRooms=$("admin-rooms");
+const settingsModal=$("settings-modal"), displayNameInput=$("display-name-input"), siteNameInput=$("site-name-input"), siteSettingsWrap=$("site-settings-wrap"), settingsError=$("settings-error");
 const messages=$("messages"), messageInput=$("message-input"), presence=$("presence"), currentRoomEl=$("current-room"), roomBadge=$("room-badge"), clearRoom=$("clear-room");
 const trackTitle=$("track-title"), trackChannel=$("track-channel"), cover=$("cover"), progressBar=$("progress-bar"), timeCurrent=$("time-current"), timeTotal=$("time-total"), playPause=$("play-pause"), playIcon=$("play-icon"), nextTrack=$("next-track"), sound=$("sound"), queueCount=$("queue-count"), miniQueue=$("mini-queue"), syncLabel=$("sync-label");
 
@@ -35,6 +36,7 @@ async function boot(){
   $("open-music").onclick=openMusic;$("open-search-top").onclick=openMusic;$("music-close").onclick=()=>musicModal.classList.add("hidden");$("music-search-btn").onclick=searchMusic;musicSearch.onkeydown=e=>{if(e.key==="Enter")searchMusic()};
   $("open-queue").onclick=openQueue;$("open-queue-2").onclick=openQueue;$("queue-close").onclick=()=>queueModal.classList.add("hidden");
   $("admin-open").onclick=()=>{adminModal.classList.remove("hidden");loadAdmin()};$("admin-close").onclick=()=>adminModal.classList.add("hidden");$("admin-clear-all").onclick=adminClearAll;
+  $("settings-open").onclick=openSettings;$("settings-close").onclick=()=>settingsModal.classList.add("hidden");$("settings-save").onclick=saveSettings;
   $("send").onclick=sendMessage;messageInput.onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}};messageInput.oninput=resizeMessage;
   clearRoom.onclick=()=>sendWS({type:"limpar_mensagens"});playPause.onclick=togglePlayback;nextTrack.onclick=()=>{if(currentTrack)sendWS({type:"proxima_musica",videoId:currentTrack.id})};sound.onclick=activateAudio;
   $("mobile-menu").onclick=()=>document.body.classList.toggle("sidebar-open");
@@ -42,7 +44,44 @@ async function boot(){
   window.onYouTubeIframeAPIReady=onYTReady;
   if(loadSession()){const {r,data}=await api("/api/auth/me");if(r.ok&&data.ok){user=data.user;saveSession();await openApp()}else{clearSession();auth.classList.remove("hidden")}}else setAuthMode(false);
 }
-async function openApp(){auth.classList.add("hidden");app.classList.remove("hidden");$("user-name").textContent=user.nome;$("user-avatar").textContent=initials(user.nome);$("user-role").textContent=user.role==="admin"?"admin":"online";$("admin-open").classList.toggle("hidden",user.role!=="admin");await loadRooms();if(!rooms.some(r=>r.nome===currentRoom))currentRoom="geral";renderRooms();connectRoom(currentRoom);clearInterval(roomPoll);roomPoll=setInterval(loadRooms,4000)}
+async function openApp(){auth.classList.add("hidden");app.classList.remove("hidden");$("user-name").textContent=user.displayName||user.nome;$("user-avatar").textContent=initials(user.displayName||user.nome);$("user-role").textContent=user.role==="admin"?"admin":"online";$("admin-open").classList.toggle("hidden",user.role!=="admin");await loadConfig();await loadRooms();if(!rooms.some(r=>r.nome===currentRoom))currentRoom="geral";renderRooms();connectRoom(currentRoom);clearInterval(roomPoll);roomPoll=setInterval(loadRooms,4000)}
+async function loadConfig(){
+  const {r,data}=await api("/api/config");
+  if(!r.ok||!data.ok)return;
+  const name=data.siteName||"Chat da Firma";
+  $("site-name").textContent=name;
+  $("brand-mark").textContent=initials(name).slice(0,1);
+  $("auth-site-name").textContent=name.toUpperCase();
+}
+
+function openSettings(){
+  displayNameInput.value=user.displayName||user.nome;
+  siteNameInput.value=$("site-name").textContent||"Chat da Firma";
+  siteSettingsWrap.classList.toggle("hidden",user.role!=="admin");
+  settingsError.textContent="";
+  settingsModal.classList.remove("hidden");
+  setTimeout(()=>displayNameInput.focus(),20);
+}
+
+async function saveSettings(){
+  const displayName=displayNameInput.value.trim();
+  if(displayName.length<2||displayName.length>30){settingsError.textContent="Seu nome deve ter entre 2 e 30 caracteres.";return}
+  settingsError.textContent="Salvando...";
+  const profile=await api("/api/settings/profile",{method:"POST",body:JSON.stringify({displayName})});
+  if(!profile.r.ok||!profile.data.ok){settingsError.textContent=profile.data.error||"Não foi possível salvar seu nome.";return}
+  user={...user,...profile.data.user};saveSession();$("user-name").textContent=user.displayName;$("user-avatar").textContent=initials(user.displayName);
+  if(user.role==="admin"){
+    const siteName=siteNameInput.value.trim();
+    if(siteName.length<2||siteName.length>40){settingsError.textContent="O nome do site deve ter entre 2 e 40 caracteres.";return}
+    const site=await api("/api/admin/settings",{method:"POST",body:JSON.stringify({siteName})});
+    if(!site.r.ok||!site.data.ok){settingsError.textContent=site.data.error||"Não foi possível salvar o nome do site.";return}
+    $("site-name").textContent=site.data.siteName;$("brand-mark").textContent=initials(site.data.siteName).slice(0,1);$("auth-site-name").textContent=site.data.siteName.toUpperCase();
+  }
+  settingsModal.classList.add("hidden");
+  toast("Ajustes salvos");
+  if(socket?.readyState===1){socket.close();setTimeout(()=>connectRoom(currentRoom),120)}
+}
+
 async function loadRooms(){const {r,data}=await api("/api/rooms");if(!r.ok||!data.ok)return;const old=rooms;rooms=data.rooms||[];renderRooms();if(!rooms.some(x=>x.nome===currentRoom)){currentRoom="geral";connectRoom("geral")}const oldCurrent=old.find(x=>x.nome===currentRoom),newCurrent=rooms.find(x=>x.nome===currentRoom);if(oldCurrent&&newCurrent&&oldCurrent.protegida!==newCurrent.protegida)connectRoom(currentRoom)}
 function renderRooms(){roomsEl.innerHTML="";for(const room of rooms){const b=document.createElement("button");b.className="room-item"+(room.nome===currentRoom?" active":"");const dot=document.createElement("span");dot.className="room-dot";dot.style.color=roomColor(room);dot.textContent=initials(room.nome).slice(0,1);const label=document.createElement("span");label.textContent=room.nome;b.append(dot,label);if(room.protegida){const lock=document.createElement("span");lock.className="room-lock";lock.textContent="•";b.append(lock)}b.onclick=()=>selectRoom(room.nome);roomsEl.appendChild(b)}}
 function roomColor(room){const map={violet:"#9b7cff",blue:"#5ea7ff",pink:"#ff7190",green:"#42d3a0",amber:"#f5b45c",cyan:"#67d6d0"};return map[room?.accent]||map.violet}

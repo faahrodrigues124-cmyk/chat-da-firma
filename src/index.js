@@ -106,6 +106,31 @@ export default {
       return user ? json({ ok: true, user }) : json({ ok: false, error: "Sessão expirada." }, 401);
     }
 
+    if (url.pathname === "/api/config" && request.method === "GET") {
+      const r = await appData(env, "/internal/config");
+      return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    }
+
+    if (url.pathname === "/api/settings/profile" && request.method === "POST") {
+      const user = await usuarioAtual(request, env);
+      if (!user) return json({ ok: false, error: "Faça login." }, 401);
+      const b = await request.json().catch(() => ({}));
+      const displayName = String(b.displayName || "").trim();
+      if (displayName.length < 2 || displayName.length > MAX_NOME) return json({ ok: false, error: "O nome de exibição deve ter entre 2 e 30 caracteres." }, 400);
+      const r = await appData(env, "/internal/settings/profile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: user.id, displayName }) });
+      return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    }
+
+    if (url.pathname === "/api/admin/settings" && request.method === "POST") {
+      const user = await usuarioAtual(request, env);
+      if (!user || user.role !== "admin") return json({ ok: false, error: "Acesso restrito ao administrador." }, 403);
+      const b = await request.json().catch(() => ({}));
+      const siteName = String(b.siteName || "").trim();
+      if (siteName.length < 2 || siteName.length > 40) return json({ ok: false, error: "O nome do site deve ter entre 2 e 40 caracteres." }, 400);
+      const r = await appData(env, "/internal/admin/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ siteName }) });
+      return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    }
+
     if (url.pathname === "/api/rooms" && request.method === "GET") {
       if (!await usuarioAtual(request, env)) return json({ ok: false, error: "Faça login." }, 401);
       const r = await appData(env, "/internal/rooms");
@@ -164,20 +189,12 @@ export default {
     }
 
     if (url.pathname === "/ws") {
-      const user = await usuarioAtual(request, env);
-      if (!user) return new Response("Sessão inválida.", { status: 401 });
+      // Não recriamos o Request de WebSocket aqui: o clone pode perder o upgrade
+      // em alguns runtimes. O próprio Durable Object valida a sessão e a sala.
       const roomName = (url.searchParams.get("room") || "geral").trim().slice(0, MAX_NOME).toLowerCase();
-      const metaResp = await appData(env, `/internal/room/${encodeURIComponent(roomName)}`);
-      if (!metaResp.ok) return new Response("Sala não encontrada.", { status: 404 });
-      const meta = await metaResp.json();
-      const headers = new Headers(request.headers);
-      headers.set("x-user-id", user.id);
-      headers.set("x-user-name", user.nome);
-      headers.set("x-user-role", user.role || "user");
-      headers.set("x-room-password-hash", meta.senhaHash || "");
-      headers.set("x-room-owner-id", meta.ownerId || "");
+      if (!roomName) return new Response("Sala inválida.", { status: 400 });
       const stub = env.CHAT_ROOM.get(env.CHAT_ROOM.idFromName(roomName));
-      return stub.fetch(new Request(request, { headers }));
+      return stub.fetch(request);
     }
 
     return env.ASSETS.fetch(request);
@@ -191,6 +208,8 @@ class AppData {
       this.users = await this.state.storage.get("users") || {};
       this.sessions = await this.state.storage.get("sessions") || {};
       this.rooms = await this.state.storage.get("rooms") || {};
+      this.config = await this.state.storage.get("config") || { siteName: "Chat da Firma" };
+      if (!this.config.siteName) this.config.siteName = "Chat da Firma";
       if (!this.rooms.geral) this.rooms.geral = { nome: "geral", accent: "violet", senhaHash: "", ownerId: "", ownerName: "Sistema" };
       let changed = false;
       for (const user of Object.values(this.users)) {
@@ -200,29 +219,46 @@ class AppData {
       if (changed) await this.persist();
     });
   }
-  async persist() { await this.state.storage.put({ users: this.users, sessions: this.sessions, rooms: this.rooms }); }
+  async persist() { await this.state.storage.put({ users: this.users, sessions: this.sessions, rooms: this.rooms, config: this.config }); }
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/internal/register" && request.method === "POST") {
       const b = await request.json(); const key = String(b.nome).toLowerCase();
       if (this.users[key]) return json({ ok: false, error: "Esse usuário já existe." }, 409);
-      const id = crypto.randomUUID(); this.users[key] = { id, nome: b.nome, senhaHash: b.senhaHash, role: key === ADMIN_USUARIO ? "admin" : "user" };
+      const id = crypto.randomUUID(); this.users[key] = { id, nome: b.nome, displayName: b.nome, senhaHash: b.senhaHash, role: key === ADMIN_USUARIO ? "admin" : "user" };
       const token = tokenNovo(); this.sessions[token] = { userId: id, expiresAt: Date.now() + SESSION_DIAS * 86400000 }; await this.persist();
-      return json({ ok: true, token, user: { id, nome: b.nome, role: this.users[key].role } });
+      return json({ ok: true, token, user: { id, nome: b.nome, displayName: this.users[key].displayName || b.nome, role: this.users[key].role } });
     }
     if (url.pathname === "/internal/login" && request.method === "POST") {
       const b = await request.json(); const user = this.users[String(b.nome || "").toLowerCase()];
       if (!user || user.senhaHash !== b.senhaHash) return json({ ok: false, error: "Usuário ou senha incorretos." }, 401);
       user.role = user.nome.toLowerCase() === ADMIN_USUARIO ? "admin" : "user";
       const token = tokenNovo(); this.sessions[token] = { userId: user.id, expiresAt: Date.now() + SESSION_DIAS * 86400000 }; await this.persist();
-      return json({ ok: true, token, user: { id: user.id, nome: user.nome, role: user.role } });
+      return json({ ok: true, token, user: { id: user.id, nome: user.nome, displayName: user.displayName || user.nome, role: user.role } });
     }
     if (url.pathname.startsWith("/internal/session/")) {
       const token = decodeURIComponent(url.pathname.split("/").pop()); const sess = this.sessions[token];
       if (!sess || sess.expiresAt < Date.now()) return json({ ok: false }, 401);
       const user = Object.values(this.users).find((u) => u.id === sess.userId); if (!user) return json({ ok: false }, 401);
       user.role = user.nome.toLowerCase() === ADMIN_USUARIO ? "admin" : "user";
-      return json({ id: user.id, nome: user.nome, role: user.role });
+      return json({ id: user.id, nome: user.nome, displayName: user.displayName || user.nome, role: user.role });
+    }
+    if (url.pathname === "/internal/config") return json({ ok: true, siteName: this.config.siteName || "Chat da Firma" });
+    if (url.pathname === "/internal/settings/profile" && request.method === "POST") {
+      const b = await request.json();
+      const user = Object.values(this.users).find((u) => u.id === String(b.userId || ""));
+      if (!user) return json({ ok: false, error: "Usuário não encontrado." }, 404);
+      const displayName = String(b.displayName || "").trim();
+      if (displayName.length < 2 || displayName.length > MAX_NOME) return json({ ok: false, error: "Nome de exibição inválido." }, 400);
+      user.displayName = displayName;
+      await this.persist();
+      return json({ ok: true, user: { id: user.id, nome: user.nome, displayName: user.displayName, role: user.role } });
+    }
+    if (url.pathname === "/internal/admin/settings" && request.method === "POST") {
+      const b = await request.json();
+      this.config.siteName = String(b.siteName || "Chat da Firma").trim().slice(0, 40) || "Chat da Firma";
+      await this.persist();
+      return json({ ok: true, siteName: this.config.siteName });
     }
     if (url.pathname === "/internal/rooms") return json({ ok: true, rooms: Object.values(this.rooms).map(({ senhaHash, ...r }) => ({ ...r, protegida: Boolean(senhaHash) })) });
     if (url.pathname.startsWith("/internal/room/")) {
@@ -246,8 +282,8 @@ class AppData {
 }
 
 export class ChatRoom {
-  constructor(state) {
-    this.state = state; this.sessoes = new Map(); this.mensagens = []; this.fila = []; this.tocandoAgora = null; this.senhaHash = ""; this.ownerId = ""; this.ultimoAvancoEm = 0;
+  constructor(state, env) {
+    this.state = state; this.env = env; this.sessoes = new Map(); this.mensagens = []; this.fila = []; this.tocandoAgora = null; this.senhaHash = ""; this.ownerId = ""; this.ultimoAvancoEm = 0;
     this.state.blockConcurrencyWhile(async () => {
       const s = await this.state.storage.get(["mensagens", "fila", "tocandoAgora", "senhaHash", "ownerId"]);
       this.mensagens = s.get("mensagens") || []; this.fila = s.get("fila") || []; this.tocandoAgora = s.get("tocandoAgora") || null; this.senhaHash = s.get("senhaHash") || ""; this.ownerId = s.get("ownerId") || "";
@@ -261,9 +297,26 @@ export class ChatRoom {
     if (request.method === "POST" && url.pathname.endsWith("/admin/clear")) { this.mensagens = []; await this.persistir(); this.transmitir({ type: "mensagens_limpas" }); return json({ ok: true }); }
     if (request.method === "POST" && url.pathname.endsWith("/admin/delete")) { this.transmitir({ type: "sala_excluida" }); for (const s of this.sessoes.keys()) { try { s.close(1000, "Sala removida"); } catch {} } await this.state.storage.deleteAll(); return json({ ok: true }); }
     if (request.headers.get("Upgrade") !== "websocket") return new Response("WebSocket esperado.", { status: 426 });
-    if (request.headers.get("x-room-password-hash") && !this.senhaHash) { this.senhaHash = request.headers.get("x-room-password-hash") || ""; this.ownerId = request.headers.get("x-room-owner-id") || ""; await this.persistir(); }
+
+    // Valida a sessão diretamente no Durable Object. Isso mantém o Request
+    // original do WebSocket intacto e evita falhas de conexão causadas por
+    // reconstrução do Request no Worker principal.
+    const urlToken = new URL(request.url).searchParams.get("token") || "";
+    if (!urlToken || !this.env?.APP_DATA) return new Response("Sessão inválida.", { status: 401 });
+    const dataStub = this.env.APP_DATA.get(this.env.APP_DATA.idFromName("global"));
+    const sessionResp = await dataStub.fetch(new Request(`https://app-data.internal/internal/session/${encodeURIComponent(urlToken)}`));
+    if (!sessionResp.ok) return new Response("Sessão inválida.", { status: 401 });
+    const user = await sessionResp.json();
+
+    const roomName = new URL(request.url).searchParams.get("room") || "geral";
+    const roomResp = await dataStub.fetch(new Request(`https://app-data.internal/internal/room/${encodeURIComponent(roomName.toLowerCase())}`));
+    if (!roomResp.ok) return new Response("Sala não encontrada.", { status: 404 });
+    const room = await roomResp.json();
+    this.senhaHash = room.senhaHash || "";
+    this.ownerId = room.ownerId || "";
+
     const pair = new WebSocketPair(); const [client, server] = Object.values(pair); server.accept();
-    const session = { nome: request.headers.get("x-user-name") || "Visitante", usuarioId: request.headers.get("x-user-id") || "", autenticado: false };
+    const session = { nome: user.displayName || user.nome || "Visitante", usuarioId: user.id || "", role: user.role || "user", autenticado: false };
     this.sessoes.set(server, session);
     this.enviar(server, { type: "autenticacao_necessaria", protegida: Boolean(this.senhaHash) });
     server.addEventListener("message", (e) => this.mensagem(server, e.data));
