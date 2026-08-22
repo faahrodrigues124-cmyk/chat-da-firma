@@ -2,12 +2,10 @@
   "name": "chat-da-firma",
   "main": "src/index.js",
   "compatibility_date": "2025-01-01",
-
   "assets": {
     "directory": "./public",
     "binding": "ASSETS"
   },
-
   "durable_objects": {
     "bindings": [
       {
@@ -20,11 +18,23 @@
       }
     ]
   },
-
   "migrations": [
     {
+      "tag": "v1",
+      "new_classes": [
+        "ChatRoom"
+      ]
+    },
+    {
       "tag": "v2",
-      "new_sqlite_classes": ["AppData"]
+      "new_sqlite_classes": [
+        "AppData"
+      ]
     }
-  ]
+  ],
+  "secrets": {
+    "required": [
+      "CHAVE_API_DO_YOUTUBE"
+    ]
+  }
 }
