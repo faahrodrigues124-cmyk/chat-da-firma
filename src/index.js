@@ -124,8 +124,11 @@ export default {
 }
 
     if (url.pathname === "/api/music") {
-      return buscarMusica(url, env);
-    }
+  return json({
+    ok: true,
+    youtubeSecret: env.CHAVE_API_DO_YOUTUBE ? "PRESENTE" : "AUSENTE"
+  });
+}
 
     if (url.pathname === "/ws") {
       const nomeDaSala = (url.searchParams.get("room") || "geral")
