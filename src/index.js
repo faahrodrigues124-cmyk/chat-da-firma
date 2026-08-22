@@ -117,8 +117,11 @@ export default {
     }
 
     if (url.pathname === "/api/health") {
-      return json({ ok: true });
-    }
+  return json({
+    ok: true,
+    youtubeSecret: env.CHAVE_API_DO_YOUTUBE ? "PRESENTE" : "AUSENTE"
+  });
+}
 
     if (url.pathname === "/api/music") {
       return buscarMusica(url, env);
