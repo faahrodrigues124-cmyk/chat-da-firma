@@ -127,8 +127,21 @@ function savePrefs() { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ sound
 function ensureAudio() {
   if (!soundEnabled) return;
   try {
+    audioOn = true;
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === "suspended") audioCtx.resume();
+    const resume = audioCtx.state === "suspended" ? audioCtx.resume() : Promise.resolve();
+    Promise.resolve(resume).catch(() => {});
+
+    // O YouTube começa mutado para respeitar o bloqueio de autoplay do navegador.
+    // Assim que o usuário interage com a página, liberamos o áudio sem recarregar
+    // a faixa e sem alterar a posição atual.
+    if (ytReady && yt && currentTrack && !currentTrack.paused && loadedVideoId === currentTrack.id) {
+      try {
+        yt.unMute();
+        yt.setVolume(100);
+        yt.playVideo();
+      } catch {}
+    }
   } catch {}
 }
 function ping(kind = "message") {
@@ -466,13 +479,23 @@ function loadTrack(track) {
   if (!ytReady || !yt) { window.pendingTrack = track; return; }
   const start = targetPosition(track);
   loadedVideoId = track.id;
-  try { yt.loadVideoById({ videoId: track.id, startSeconds: start }); } catch { return; }
+  try {
+    // Nunca usamos a troca de faixa para controlar a pausa. O servidor guarda
+    // startedAt/position e isso permite entrar no meio da música sem reiniciá-la.
+    yt.loadVideoById({ videoId: track.id, startSeconds: start });
+  } catch { return; }
   setTimeout(() => {
     if (currentTrack?.id !== track.id) return;
     try {
       yt.seekTo(targetPosition(track), true);
-      if (track.paused) yt.pauseVideo(); else { if (!audioOn) yt.mute(); else yt.unMute(); yt.playVideo(); }
-      syncLabel.textContent = track.paused ? "pausado" : "ao vivo";
+      if (track.paused) {
+        yt.pauseVideo();
+      } else {
+        if (audioOn) { yt.unMute(); yt.setVolume(100); }
+        else yt.mute();
+        yt.playVideo();
+      }
+      syncLabel.textContent = track.paused ? "pausado" : (audioOn ? "ao vivo" : "clique para ativar o áudio");
     } catch {}
   }, 350);
 }
@@ -498,11 +521,17 @@ function togglePlayback() {
 function onYTReady() { ytReady = true; yt = window.__salaPlayer; if (window.pendingTrack) { const p = window.pendingTrack; window.pendingTrack = null; loadTrack(p); } }
 window.onYouTubeIframeAPIReady = function () {
   if (yt) return;
-  window.__salaPlayer = new YT.Player("youtube-player", { height: "1", width: "1", playerVars: { autoplay: 1, playsinline: 1, controls: 0, rel: 0, modestbranding: 1 }, events: {
+  // Mantemos o player fora da área visual, mas com dimensões reais. Alguns
+  // navegadores bloqueiam áudio de players 1x1 ou totalmente invisíveis.
+  window.__salaPlayer = new YT.Player("youtube-player", { height: "200", width: "200", playerVars: { autoplay: 1, playsinline: 1, controls: 0, rel: 0, modestbranding: 1, origin: location.origin }, events: {
     onReady: onYTReady,
     onStateChange: e => {
       if (e.data === YT.PlayerState.ENDED && currentTrack && !currentTrack.paused) sendWS({ type: "proxima_musica", videoId: currentTrack.id });
-      if (e.data === YT.PlayerState.PLAYING && currentTrack && !currentTrack.paused) { syncLabel.textContent = "ao vivo"; if (!audioOn) sound.classList.remove("hidden"); }
+      if (e.data === YT.PlayerState.PLAYING && currentTrack && !currentTrack.paused) {
+        if (audioOn) { try { yt.unMute(); yt.setVolume(100); } catch {} }
+        syncLabel.textContent = audioOn ? "ao vivo" : "clique para ativar o áudio";
+        sound.classList.remove("hidden");
+      }
     }
   } });
 };
