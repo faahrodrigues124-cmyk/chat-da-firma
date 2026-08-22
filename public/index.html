@@ -1,124 +1,103 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#08090d" />
-  <title>Sala Sonora — ouvir junto</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#08090d">
+  <title>Sala Sonora</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="modal-auth" class="modal-overlay">
-    <div class="modal auth-modal">
-      <div class="brand-lockup"><span class="brand-mark">S</span><span>Sala Sonora</span></div>
-      <span class="eyebrow">ESPAÇO PRIVADO</span>
-      <h2 id="titulo-auth">Entrar na Sala Sonora</h2>
-      <p id="subtitulo-auth" class="modal-sub">Entre com seu usuário e senha para continuar.</p>
-      <label class="field"><span>Usuário</span><input id="input-login" type="text" maxlength="30" placeholder="seu usuário" autocomplete="username" /></label>
-      <label class="field"><span>Senha</span><input id="input-senha-login" class="campo-senha" type="password" maxlength="120" placeholder="sua senha" autocomplete="current-password" /></label>
-      <button id="btn-auth" class="btn-primario btn-wide">Entrar</button>
-      <button id="btn-trocar-auth" class="btn-link auth-troca" type="button"><span id="texto-trocar-auth">Ainda não tenho conta</span></button>
-      <p id="erro-auth" class="erro-form"></p>
+  <div id="toast-stack" class="toast-stack"></div>
+
+  <div id="auth" class="auth-screen">
+    <div class="auth-glow glow-a"></div><div class="auth-glow glow-b"></div>
+    <div class="auth-card">
+      <div class="logo-mark">S</div>
+      <div class="brand">SALA <span>SONORA</span></div>
+      <div class="auth-kicker">PRIVATE LISTENING SPACE</div>
+      <h1 id="auth-title">Entrar</h1>
+      <p id="auth-subtitle">Entre para conversar e ouvir música com a sala.</p>
+      <label>Usuário<input id="auth-user" autocomplete="username" maxlength="30" placeholder="ex.: FAB"></label>
+      <label>Senha<input id="auth-pass" type="password" autocomplete="current-password" maxlength="120" placeholder="••••••••"></label>
+      <button id="auth-submit" class="primary big">Entrar</button>
+      <button id="auth-toggle" class="text-button">Criar uma conta</button>
+      <div id="auth-error" class="form-error"></div>
     </div>
   </div>
 
-  <div id="modal-sala" class="modal-overlay escondido">
-    <div class="modal">
-      <div class="modal-topo"><div><span class="eyebrow">NOVO ESPAÇO</span><h2>Criar nova sala</h2></div><button id="btn-cancelar-sala" class="icon-btn" aria-label="Fechar">×</button></div>
-      <p class="modal-sub">Crie um ambiente para conversar e ouvir música junto.</p>
-      <label class="field"><span>Nome da sala</span><input id="input-sala" type="text" maxlength="30" placeholder="ex.: noite-de-sabado" autocomplete="off" /></label>
-      <div class="field"><span>Ícone</span><div class="emoji-picker" id="emoji-picker"></div></div>
-      <label class="toggle-row"><input id="check-sala-senha" type="checkbox" /><span class="toggle-ui"></span><span>Proteger esta sala com senha</span></label>
-      <input id="input-sala-senha" class="campo-senha escondido" type="password" maxlength="80" placeholder="Senha da sala" autocomplete="new-password" />
-      <div class="modal-botoes"><button id="btn-criar-sala" class="btn-primario">Criar sala</button></div>
-      <p id="erro-sala" class="erro-form"></p>
-    </div>
-  </div>
+  <div id="room-modal" class="overlay hidden"><div class="modal">
+    <button class="modal-close" id="room-close">×</button>
+    <div class="kicker">NOVO ESPAÇO</div><h2>Criar sala</h2><p>Um lugar separado para conversar e ouvir junto.</p>
+    <label>Nome da sala<input id="room-name" maxlength="30" placeholder="after-hours"></label>
+    <div class="field-label">Cor da sala</div>
+    <div id="accent-picker" class="accent-picker"></div>
+    <label class="check-row"><input id="room-private" type="checkbox"><span></span> Sala protegida por senha</label>
+    <label id="room-pass-wrap" class="hidden">Senha<input id="room-pass" type="password" maxlength="80" placeholder="mínimo 4 caracteres"></label>
+    <div class="modal-actions"><button id="room-create" class="primary">Criar sala</button></div>
+    <div id="room-error" class="form-error"></div>
+  </div></div>
 
-  <div id="modal-senha-sala" class="modal-overlay escondido">
-    <div class="modal compact-modal">
-      <div class="lock-visual">LOCK</div>
-      <span class="eyebrow">SALA PROTEGIDA</span>
-      <h2>Acesso restrito</h2>
-      <p class="modal-sub">Digite a senha para entrar nesta sala.</p>
-      <label class="field"><span>Senha</span><input id="input-entrar-senha" type="password" maxlength="80" placeholder="senha da sala" autocomplete="current-password" /></label>
-      <div class="modal-botoes"><button id="btn-cancelar-senha" class="btn-secundario">Cancelar</button><button id="btn-entrar-senha" class="btn-primario">Entrar</button></div>
-      <p id="erro-senha-sala" class="erro-form"></p>
-    </div>
-  </div>
+  <div id="password-modal" class="overlay hidden"><div class="modal small-modal">
+    <button class="modal-close" id="password-close">×</button>
+    <div class="modal-icon lock-icon">●</div><div class="kicker">SALA PRIVADA</div><h2>Acesso restrito</h2><p>Essa sala exige uma senha.</p>
+    <label>Senha<input id="room-enter-pass" type="password" maxlength="80"></label>
+    <div class="modal-actions"><button id="password-enter" class="primary">Entrar na sala</button></div>
+    <div id="password-error" class="form-error"></div>
+  </div></div>
 
-  <div id="modal-fila" class="modal-overlay escondido">
-    <div class="modal modal-grande">
-      <div class="modal-topo"><div><span class="eyebrow">UP NEXT</span><h2>Fila da sala</h2><p class="modal-sub">A ordem coletiva das próximas faixas.</p></div><button id="btn-fechar-fila" class="icon-btn">×</button></div>
-      <div id="lista-fila" class="lista-fila"></div>
-    </div>
-  </div>
+  <div id="music-modal" class="overlay hidden"><div class="modal music-modal">
+    <button class="modal-close" id="music-close">×</button>
+    <div class="kicker">COLOCAR NA FILA</div><h2>Adicionar música</h2><p>A próxima faixa entra na programação coletiva.</p>
+    <div class="search-row"><input id="music-search" placeholder="Artista, faixa ou álbum..." autocomplete="off"><button id="music-search-btn" class="primary">Buscar</button></div>
+    <div id="music-status" class="subtle"></div><div id="music-results" class="music-results"></div>
+  </div></div>
 
-  <div id="modal-musica" class="modal-overlay escondido">
-    <div class="modal modal-grande search-modal">
-      <div class="modal-topo"><div><span class="eyebrow">MÚSICA</span><h2>Adicionar à fila</h2><p class="modal-sub">Pesquise uma faixa e ela entra na programação coletiva.</p></div><button id="btn-fechar-musica" class="icon-btn">×</button></div>
-      <div class="busca-musica"><input id="input-busca-musica" type="text" placeholder="Artista, música ou álbum..." autocomplete="off" /><button id="btn-buscar-musica" class="btn-primario">Buscar</button></div>
-      <p id="status-busca-musica" class="status-busca"></p>
-      <div id="resultados-musica" class="resultados-musica"></div>
-    </div>
-  </div>
+  <div id="queue-modal" class="overlay hidden"><div class="modal queue-modal">
+    <button class="modal-close" id="queue-close">×</button>
+    <div class="kicker">PROGRAMAÇÃO</div><h2>Fila da sala</h2><p>O que vem depois da faixa atual.</p>
+    <div id="queue-list" class="queue-list"></div>
+  </div></div>
 
-  <div id="modal-admin" class="modal-overlay escondido">
-    <div class="modal modal-grande">
-      <div class="modal-topo"><div><span class="eyebrow">CONTROLE</span><h2>Administração</h2><p class="modal-sub">Gerencie salas e históricos do servidor.</p></div><button id="btn-fechar-admin" class="icon-btn">×</button></div>
-      <div class="admin-acoes"><button id="btn-admin-limpar-tudo" class="btn-perigo">Limpar todas as conversas</button></div>
-      <div id="lista-admin-salas" class="lista-admin-salas"></div>
-    </div>
-  </div>
+  <div id="admin-modal" class="overlay hidden"><div class="modal admin-modal">
+    <button class="modal-close" id="admin-close">×</button>
+    <div class="kicker">ADMIN / FAB</div><h2>Controle da comunidade</h2><p>Gerencie salas e histórico do servidor.</p>
+    <div class="admin-danger"><div><strong>Limpar todas as conversas</strong><span>Remove o histórico de todas as salas.</span></div><button id="admin-clear-all" class="danger">Limpar tudo</button></div>
+    <div class="admin-section-title">Salas</div><div id="admin-rooms" class="admin-rooms"></div>
+  </div></div>
 
-  <div id="app" class="app escondido">
+  <div id="app" class="app hidden">
     <aside class="sidebar">
-      <div class="sidebar-brand"><span class="brand-mark">S</span><div><strong>Sala Sonora</strong><span>ouvir junto</span></div></div>
-      <div class="cartao-usuario">
-        <div class="avatar" id="avatar-usuario"></div>
-        <div class="info-usuario"><strong id="nome-usuario">—</strong><span class="status-online">Online</span></div>
-        <span id="badge-admin" class="badge-admin escondido">ADMIN</span>
-        <button id="btn-sair" class="icon-btn small" title="Sair">↗</button>
-      </div>
-
-      <div class="secao-salas">
-        <div class="section-label"><span>Salas</span><span class="live-dot"></span></div>
-        <ul id="lista-salas" class="lista-salas"></ul>
-        <button id="btn-nova-sala" class="btn-nova-sala"><span>+</span> Nova sala</button>
-        <button id="btn-admin" class="btn-admin escondido" type="button">Administração</button>
-      </div>
-
-      <div class="sidebar-footer"><span>Conectado</span><span class="kbd">LIVE</span></div>
+      <div class="sidebar-head"><div class="brand-mini"><span class="brand-square">S</span><div><strong>Sala Sonora</strong><small>listen together</small></div></div><button id="mobile-menu" class="icon-button">☰</button></div>
+      <div class="profile-card"><div id="user-avatar" class="avatar"></div><div class="profile-copy"><strong id="user-name">—</strong><span><i></i><em id="user-role">online</em></span></div><button id="logout" class="logout">Sair</button></div>
+      <div class="side-label"><span>SEUS ESPAÇOS</span><button id="new-room" class="plus-button" title="Nova sala">+</button></div>
+      <nav id="rooms" class="rooms"></nav>
+      <button id="admin-open" class="admin-button hidden">Administração <span>⌘</span></button>
+      <div class="sidebar-bottom"><span>Cloud radio</span><span class="live-pill"><i></i> LIVE</span></div>
     </aside>
 
-    <main class="principal">
-      <header class="cabecalho-sala">
-        <div class="room-title"><span id="emoji-sala-atual" class="room-symbol">#</span><div><strong id="nome-sala-atual">geral</strong><span id="presenca-sala" class="presenca-sala">conectando...</span></div></div>
-        <div class="room-actions"><button id="btn-limpar-conversa" class="btn-link btn-limpar" type="button">Limpar conversa</button></div>
+    <main class="main">
+      <header class="topbar">
+        <div class="room-heading"><div id="room-badge" class="room-badge">G</div><div><div id="current-room" class="room-name">geral</div><div id="presence" class="room-presence">conectando...</div></div></div>
+        <div class="top-actions"><button id="clear-room" class="top-action hidden">Limpar chat</button><button id="open-search-top" class="top-search"><span>⌕</span> Adicionar música <kbd>⌘ K</kbd></button></div>
       </header>
-
-      <section id="lista-mensagens" class="lista-mensagens"></section>
-
-      <footer class="compositor">
-        <button id="btn-abrir-busca" class="btn-anexo btn-musica" type="button" title="Adicionar música"><span class="music-glyph">♪</span><span>Adicionar música</span></button>
-        <div class="composer-input"><textarea id="input-mensagem" rows="1" placeholder="Escreva uma mensagem..." aria-label="Mensagem"></textarea><span class="composer-hint">Enter para enviar · Shift + Enter para quebrar linha</span></div>
-        <button id="btn-enviar" class="btn-primario send-btn">Enviar</button>
-      </footer>
+      <section id="messages" class="messages"></section>
+      <footer class="composer"><button id="open-music" class="composer-tool" title="Adicionar música"><span>♫</span></button><div class="composer-box"><textarea id="message-input" rows="1" placeholder="Escreva algo para a sala..."></textarea><span>Enter envia · Shift + Enter quebra linha</span></div><button id="send" class="send">Enviar</button></footer>
     </main>
 
-    <aside class="music-rail">
-      <div class="music-rail-header"><div><span class="eyebrow">AGORA</span><h3>Rádio da sala</h3></div><button id="btn-abrir-fila" class="ghost-btn">Fila</button></div>
-      <div id="capa-radio" class="capa-radio"><div class="cover-placeholder">♪</div></div>
-      <div class="now-playing"><div id="titulo-radio" class="titulo-radio">Nenhuma música tocando</div><div id="artista-radio" class="artista-radio">Adicione uma faixa para começar</div></div>
-      <div class="player-controls"><button id="btn-pausar-musica" class="player-main-btn escondido">Continuar</button><button id="btn-pular-musica" class="player-next-btn escondido" title="Próxima faixa">Próxima</button></div>
-      <button id="btn-ativar-audio" class="btn-secundario btn-wide btn-ativar-audio escondido">Ativar áudio</button>
-      <div class="queue-summary"><div><span>Próximas</span><strong id="fila-preview">Fila vazia</strong></div><button id="btn-abrir-fila-rail" class="queue-open" type="button">Ver fila</button></div>
-      <div class="rail-divider"></div>
-      <div class="mini-info"><span class="live-dot"></span><span id="mini-radio-titulo">Nenhuma música tocando</span></div>
+    <aside class="radio">
+      <div class="radio-head"><div><div class="kicker">LIVE ROOM</div><h3>Rádio da sala</h3></div><button id="open-queue" class="ghost">Fila <span id="queue-count">0</span></button></div>
+      <div id="cover" class="cover"><div class="cover-letter">S</div><div class="cover-shine"></div></div>
+      <div class="track-meta"><h2 id="track-title">Nenhuma música</h2><p id="track-channel">Adicione uma faixa para começar</p></div>
+      <div class="progress"><div id="progress-bar"></div></div><div class="time-row"><span id="time-current">0:00</span><span id="time-total">0:00</span></div>
+      <div class="player-controls"><button id="previous-placeholder" class="round-control" disabled>↶</button><button id="play-pause" class="play-control" disabled><span id="play-icon">▶</span></button><button id="next-track" class="round-control" disabled>↷</button></div>
+      <button id="sound" class="sound-button hidden">Ativar som</button>
+      <div class="up-next"><div class="up-next-head"><span>PRÓXIMAS</span><button id="open-queue-2">Ver fila</button></div><div id="mini-queue"></div></div>
+      <div class="radio-footer"><span><i></i> sincronizado</span><span id="sync-label">—</span></div>
     </aside>
   </div>
 
-  <div id="player-youtube"></div>
+  <div id="youtube-player"></div>
   <script src="https://www.youtube.com/iframe_api"></script>
   <script src="app.js"></script>
 </body>

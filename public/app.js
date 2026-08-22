@@ -1,489 +1,109 @@
 "use strict";
 
-const EMOJIS_SALA = ["#", "•", "◆", "✦", "◌", "◐", "◇", "＋"];
-const SESSION_KEY = "sessaoSalaSonora";
+const SESSION_KEY = "salaSonoraSession";
+const accents = ["#9b7cff","#5ea7ff","#ff7190","#42d3a0","#f5b45c","#67d6d0"];
+let user = { id:"", nome:"", role:"user" }, token="", rooms=[], currentRoom=localStorage.getItem("ss-room")||"geral";
+let socket=null, socketGeneration=0, authenticated=false, pendingPasswordRoom=null, roomPoll=null;
+let queue=[], currentTrack=null, loadedVideoId=null, yt=null, ytReady=false, audioOn=false, progressTimer=null, applyingServerState=false;
+let selectedAccent=accents[0], authRegister=false;
 
-let meuNome = "";
-let meuId = "";
-let meuRole = "user";
-let sessionToken = "";
-let salas = [];
-let salaAtual = localStorage.getItem("salaAtual") || "geral";
-let socket = null;
-let tocandoAgoraAtual = null;
-let ytPlayer = null;
-let ytPronto = false;
-let ytPendente = null;
-let audioLiberado = false;
-let emojiEscolhido = EMOJIS_SALA[0];
-let filaAtual = [];
-let conexaoAutenticada = false;
-let roomRefreshTimer = null;
-let loginModoCadastro = false;
+const $=id=>document.getElementById(id);
+const auth=$("auth"), app=$("app"), authTitle=$("auth-title"), authSubtitle=$("auth-subtitle"), authUser=$("auth-user"), authPass=$("auth-pass"), authSubmit=$("auth-submit"), authToggle=$("auth-toggle"), authError=$("auth-error");
+const roomModal=$("room-modal"), roomName=$("room-name"), roomPrivate=$("room-private"), roomPass=$("room-pass"), roomPassWrap=$("room-pass-wrap"), roomError=$("room-error"), roomsEl=$("rooms"), accentPicker=$("accent-picker");
+const passwordModal=$("password-modal"), roomEnterPass=$("room-enter-pass"), passwordError=$("password-error");
+const musicModal=$("music-modal"), musicSearch=$("music-search"), musicResults=$("music-results"), musicStatus=$("music-status");
+const queueModal=$("queue-modal"), queueList=$("queue-list"), adminModal=$("admin-modal"), adminRooms=$("admin-rooms");
+const messages=$("messages"), messageInput=$("message-input"), presence=$("presence"), currentRoomEl=$("current-room"), roomBadge=$("room-badge"), clearRoom=$("clear-room");
+const trackTitle=$("track-title"), trackChannel=$("track-channel"), cover=$("cover"), progressBar=$("progress-bar"), timeCurrent=$("time-current"), timeTotal=$("time-total"), playPause=$("play-pause"), playIcon=$("play-icon"), nextTrack=$("next-track"), sound=$("sound"), queueCount=$("queue-count"), miniQueue=$("mini-queue"), syncLabel=$("sync-label");
 
-const el = (id) => document.getElementById(id);
+function toast(text,error=false){const d=document.createElement("div");d.className="toast"+(error?" error":"");d.textContent=text;$("toast-stack").appendChild(d);setTimeout(()=>d.remove(),3200)}
+function initials(name){return String(name||"?").slice(0,2).toUpperCase()}
+function saveSession(){localStorage.setItem(SESSION_KEY,JSON.stringify({token,...user}))}
+function loadSession(){try{const s=JSON.parse(localStorage.getItem(SESSION_KEY));if(s?.token&&s?.id&&s?.nome){token=s.token;user={id:s.id,nome:s.nome,role:s.role||"user"};return true}}catch{}return false}
+function clearSession(){localStorage.removeItem(SESSION_KEY);token="";user={id:"",nome:"",role:"user"}}
+async function api(path,options={}){const h=new Headers(options.headers||{});h.set("content-type","application/json");if(token)h.set("authorization",`Bearer ${token}`);const r=await fetch(path,{...options,headers:h});const raw=await r.text();let data={};try{data=raw?JSON.parse(raw):{}}catch{data={ok:false,error:"Resposta inválida."}}return{r,data}}
+function setAuthMode(register){authRegister=register;authTitle.textContent=register?"Criar conta":"Entrar";authSubtitle.textContent=register?"Seu perfil fica salvo neste dispositivo.":"Entre para conversar e ouvir com a sala.";authSubmit.textContent=register?"Criar conta":"Entrar";authToggle.textContent=register?"Já tenho uma conta":"Criar uma conta";authError.textContent=""}
+async function authSubmitNow(){const nome=authUser.value.trim(),senha=authPass.value;if(nome.length<3)return authError.textContent="Use pelo menos 3 caracteres no usuário.";if(senha.length<6)return authError.textContent="A senha precisa ter pelo menos 6 caracteres.";authSubmit.disabled=true;authError.textContent=authRegister?"Criando...":"Entrando...";try{const {r,data}=await api(authRegister?"/api/auth/register":"/api/auth/login",{method:"POST",body:JSON.stringify({nome,senha})});if(!r.ok||!data.ok){authError.textContent=data.error||"Não foi possível entrar.";return}token=data.token;user=data.user;saveSession();await openApp()}catch{authError.textContent="Falha de conexão."}finally{authSubmit.disabled=false}}
 
-const modalAuth = el("modal-auth");
-const tituloAuth = el("titulo-auth");
-const subtituloAuth = el("subtitulo-auth");
-const inputLogin = el("input-login");
-const inputSenhaLogin = el("input-senha-login");
-const btnAuth = el("btn-auth");
-const btnTrocarAuth = el("btn-trocar-auth");
-const textoTrocarAuth = el("texto-trocar-auth");
-const erroAuth = el("erro-auth");
-
-const modalSala = el("modal-sala");
-const inputSala = el("input-sala");
-const btnNovaSala = el("btn-nova-sala");
-const btnCriarSala = el("btn-criar-sala");
-const btnCancelarSala = el("btn-cancelar-sala");
-const erroSala = el("erro-sala");
-const emojiPicker = el("emoji-picker");
-const checkSalaSenha = el("check-sala-senha");
-const inputSalaSenha = el("input-sala-senha");
-
-const modalSenhaSala = el("modal-senha-sala");
-const inputEntrarSenha = el("input-entrar-senha");
-const btnCancelarSenha = el("btn-cancelar-senha");
-const btnEntrarSenha = el("btn-entrar-senha");
-const erroSenhaSala = el("erro-senha-sala");
-
-const modalMusica = el("modal-musica");
-const btnAbrirBusca = el("btn-abrir-busca");
-const btnFecharMusica = el("btn-fechar-musica");
-const inputBuscaMusica = el("input-busca-musica");
-const btnBuscarMusica = el("btn-buscar-musica");
-const statusBusca = el("status-busca-musica");
-const resultadosMusica = el("resultados-musica");
-
-const modalFila = el("modal-fila");
-const btnAbrirFila = el("btn-abrir-fila");
-const btnFecharFila = el("btn-fechar-fila");
-const listaFila = el("lista-fila");
-
-const app = el("app");
-const nomeUsuarioEl = el("nome-usuario");
-const btnSair = el("btn-sair");
-const badgeAdmin = el("badge-admin");
-const btnAdmin = el("btn-admin");
-const modalAdmin = el("modal-admin");
-const btnFecharAdmin = el("btn-fechar-admin");
-const btnAdminLimparTudo = el("btn-admin-limpar-tudo");
-const listaAdminSalas = el("lista-admin-salas");
-const listaSalasEl = el("lista-salas");
-const miniRadioTitulo = el("mini-radio-titulo");
-const btnAtivarAudio = el("btn-ativar-audio");
-const capaRadio = el("capa-radio");
-const tituloRadio = el("titulo-radio");
-const artistaRadio = el("artista-radio");
-const filaPreview = el("fila-preview");
-const btnPausarMusica = el("btn-pausar-musica");
-const btnPularMusica = el("btn-pular-musica");
-const btnLimparConversa = el("btn-limpar-conversa");
-const emojiSalaAtual = el("emoji-sala-atual");
-const nomeSalaAtual = el("nome-sala-atual");
-const presencaSala = el("presenca-sala");
-const listaMensagens = el("lista-mensagens");
-const inputMensagem = el("input-mensagem");
-const btnEnviar = el("btn-enviar");
-const btnAbrirFilaRail = document.querySelector(".queue-open");
-
-function salvarSessao() {
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ token: sessionToken, id: meuId, nome: meuNome, role: meuRole }));
+async function boot(){
+  buildAccentPicker();
+  $("auth-submit").onclick=authSubmitNow; authToggle.onclick=()=>setAuthMode(!authRegister); authPass.onkeydown=e=>{if(e.key==="Enter")authSubmitNow()}; authUser.onkeydown=e=>{if(e.key==="Enter")authPass.focus()};
+  $("logout").onclick=()=>{if(confirm("Sair desta conta neste dispositivo?")){if(socket)socket.close();clearSession();app.classList.add("hidden");auth.classList.remove("hidden");setAuthMode(false)}};
+  $("new-room").onclick=()=>{roomName.value="";roomPass.value="";roomPrivate.checked=false;roomPassWrap.classList.add("hidden");roomError.textContent="";roomModal.classList.remove("hidden");roomName.focus()};
+  $("room-close").onclick=()=>roomModal.classList.add("hidden");roomPrivate.onchange=()=>roomPassWrap.classList.toggle("hidden",!roomPrivate.checked);$("room-create").onclick=createRoom;
+  $("password-close").onclick=()=>{passwordModal.classList.add("hidden");if(socket)socket.close()};$("password-enter").onclick=()=>sendRoomPassword(roomEnterPass.value);roomEnterPass.onkeydown=e=>{if(e.key==="Enter")sendRoomPassword(roomEnterPass.value)};
+  $("open-music").onclick=openMusic;$("open-search-top").onclick=openMusic;$("music-close").onclick=()=>musicModal.classList.add("hidden");$("music-search-btn").onclick=searchMusic;musicSearch.onkeydown=e=>{if(e.key==="Enter")searchMusic()};
+  $("open-queue").onclick=openQueue;$("open-queue-2").onclick=openQueue;$("queue-close").onclick=()=>queueModal.classList.add("hidden");
+  $("admin-open").onclick=()=>{adminModal.classList.remove("hidden");loadAdmin()};$("admin-close").onclick=()=>adminModal.classList.add("hidden");$("admin-clear-all").onclick=adminClearAll;
+  $("send").onclick=sendMessage;messageInput.onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}};messageInput.oninput=resizeMessage;
+  clearRoom.onclick=()=>sendWS({type:"limpar_mensagens"});playPause.onclick=togglePlayback;nextTrack.onclick=()=>{if(currentTrack)sendWS({type:"proxima_musica",videoId:currentTrack.id})};sound.onclick=activateAudio;
+  $("mobile-menu").onclick=()=>document.body.classList.toggle("sidebar-open");
+  document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();openMusic()}});
+  window.onYouTubeIframeAPIReady=onYTReady;
+  if(loadSession()){const {r,data}=await api("/api/auth/me");if(r.ok&&data.ok){user=data.user;saveSession();await openApp()}else{clearSession();auth.classList.remove("hidden")}}else setAuthMode(false);
 }
-function carregarSessao() {
-  try {
-    const s = JSON.parse(localStorage.getItem(SESSION_KEY));
-    if (s?.token && s?.id && s?.nome) { sessionToken = s.token; meuId = s.id; meuNome = s.nome; meuRole = s.role || "user"; return true; }
-  } catch {}
-  return false;
+async function openApp(){auth.classList.add("hidden");app.classList.remove("hidden");$("user-name").textContent=user.nome;$("user-avatar").textContent=initials(user.nome);$("user-role").textContent=user.role==="admin"?"admin":"online";$("admin-open").classList.toggle("hidden",user.role!=="admin");await loadRooms();if(!rooms.some(r=>r.nome===currentRoom))currentRoom="geral";renderRooms();connectRoom(currentRoom);clearInterval(roomPoll);roomPoll=setInterval(loadRooms,4000)}
+async function loadRooms(){const {r,data}=await api("/api/rooms");if(!r.ok||!data.ok)return;const old=rooms;rooms=data.rooms||[];renderRooms();if(!rooms.some(x=>x.nome===currentRoom)){currentRoom="geral";connectRoom("geral")}const oldCurrent=old.find(x=>x.nome===currentRoom),newCurrent=rooms.find(x=>x.nome===currentRoom);if(oldCurrent&&newCurrent&&oldCurrent.protegida!==newCurrent.protegida)connectRoom(currentRoom)}
+function renderRooms(){roomsEl.innerHTML="";for(const room of rooms){const b=document.createElement("button");b.className="room-item"+(room.nome===currentRoom?" active":"");const dot=document.createElement("span");dot.className="room-dot";dot.style.color=roomColor(room);dot.textContent=initials(room.nome).slice(0,1);const label=document.createElement("span");label.textContent=room.nome;b.append(dot,label);if(room.protegida){const lock=document.createElement("span");lock.className="room-lock";lock.textContent="•";b.append(lock)}b.onclick=()=>selectRoom(room.nome);roomsEl.appendChild(b)}}
+function roomColor(room){const map={violet:"#9b7cff",blue:"#5ea7ff",pink:"#ff7190",green:"#42d3a0",amber:"#f5b45c",cyan:"#67d6d0"};return map[room?.accent]||map.violet}
+function selectRoom(name){if(name===currentRoom&&socket?.readyState===1)return;currentRoom=name;localStorage.setItem("ss-room",name);renderRooms();document.body.classList.remove("sidebar-open");connectRoom(name)}
+function connectRoom(name){if(socket)try{socket.close()}catch{}authenticated=false;messages.innerHTML="";currentTrack=null;queue=[];loadedVideoId=null;updateRadio();presence.textContent="conectando...";const gen=++socketGeneration;const proto=location.protocol==="https:"?"wss":"ws";const wsUrl=`${proto}://${location.host}/ws?room=${encodeURIComponent(name)}&token=${encodeURIComponent(token)}`;socket=new WebSocket(wsUrl);socket.onopen=()=>{if(gen!==socketGeneration)return;presence.textContent="autenticando..."};socket.onmessage=e=>{try{handleServer(JSON.parse(e.data))}catch{}};socket.onerror=()=>{if(gen===socketGeneration)presence.textContent="falha na conexão"};socket.onclose=()=>{if(gen!==socketGeneration)return;authenticated=false;presence.textContent="reconectando...";setTimeout(()=>{if(gen===socketGeneration&&token)connectRoom(name)},1200)}}
+function sendWS(obj){if(socket?.readyState===1)socket.send(JSON.stringify(obj));else toast("A sala ainda está conectando.",true)}
+async function hashLocal(text){const bytes=new TextEncoder().encode(text);const d=await crypto.subtle.digest("SHA-256",bytes);return Array.from(new Uint8Array(d)).map(b=>b.toString(16).padStart(2,"0")).join("")}
+function handleServer(d){
+  if(d.type==="autenticacao_necessaria"){if(d.protegida){pendingPasswordRoom=currentRoom;passwordError.textContent="";roomEnterPass.value="";passwordModal.classList.remove("hidden");roomEnterPass.focus()}else sendWS({type:"entrar",senhaHash:""});return}
+  if(d.type==="estado_inicial"){authenticated=true;passwordModal.classList.add("hidden");const room=rooms.find(x=>x.nome===currentRoom);currentRoomEl.textContent=currentRoom;roomBadge.textContent=initials(currentRoom).slice(0,1);roomBadge.style.color=roomColor(room);clearRoom.classList.toggle("hidden",d.ownerId!==user.id&&user.role!=="admin");messages.innerHTML="";(d.mensagens||[]).forEach(renderMessage);queue=d.fila||[];applyRadioState(d.tocandoAgora,d.fila,true);scrollBottom();return}
+  if(d.type==="mensagem"){renderMessage(d.mensagem);scrollBottom();return}
+  if(d.type==="mensagens_limpas"){messages.innerHTML="";systemMessage("O histórico desta sala foi limpo.");return}
+  if(d.type==="reacao"){updateReaction(d.messageId,d.emoji,d.total);return}
+  if(d.type==="presenca"){presence.textContent=`${d.total} ${d.total===1?"pessoa":"pessoas"} na sala`;return}
+  if(d.type==="tocando_agora"){applyRadioState(d.tocandoAgora,d.fila,false);return}
+  if(d.type==="sala_excluida"){toast("Esta sala foi removida.",true);connectRoom("geral");loadRooms();return}
+  if(d.type==="erro"){if(d.code==="SENHA_INCORRETA"){passwordError.textContent=d.message;passwordModal.classList.remove("hidden")}else toast(d.message||"Algo deu errado.",true)}
 }
-function limparSessao() { localStorage.removeItem(SESSION_KEY); sessionToken = ""; meuId = ""; meuNome = ""; meuRole = "user"; }
+function sendRoomPassword(pass){if(!pass)return passwordError.textContent="Digite a senha.";hashLocal(pass).then(h=>sendWS({type:"entrar",senhaHash:h}))}
+function renderMessage(m){const row=document.createElement("article");row.className="message-row"+(m.autorId===user.id?" mine":"");row.dataset.id=m.id;const av=document.createElement("div");av.className="message-avatar";av.textContent=initials(m.nome);const c=document.createElement("div");c.className="message-content";const head=document.createElement("div");head.className="message-head";const name=document.createElement("span");name.className="message-name";name.textContent=m.autorId===user.id?"Você":m.nome;const time=document.createElement("span");time.className="message-time";time.textContent=new Date(m.ts).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});head.append(name,time);const bubble=document.createElement("div");bubble.className="bubble";bubble.textContent=m.text;const reactions=document.createElement("div");reactions.className="reactions";for(const x of ["+1","♡","⌁"]){const b=document.createElement("button");b.className="reaction";b.textContent=m.reacoes?.[x]?`${x} ${m.reacoes[x]}`:x;b.onclick=()=>sendWS({type:"reacao",messageId:m.id,emoji:x});reactions.appendChild(b)}c.append(head,bubble,reactions);row.append(av,c);messages.appendChild(row)}
+function updateReaction(id,emoji,total){const row=messages.querySelector(`[data-id="${CSS.escape(id)}"]`);if(!row)return;const buttons=[...row.querySelectorAll(".reaction")];const b=buttons.find(x=>x.textContent.startsWith(emoji));if(b)b.textContent=total?`${emoji} ${total}`:emoji}
+function systemMessage(t){const d=document.createElement("div");d.className="system-message";d.textContent=t;messages.appendChild(d);scrollBottom()}
+function scrollBottom(){requestAnimationFrame(()=>messages.scrollTop=messages.scrollHeight)}
+function sendMessage(){const text=messageInput.value.trim();if(!text||!authenticated)return;if(text.toLowerCase().startsWith("!play ")){messageInput.value="";resizeMessage();searchAndQueue(text.slice(6).trim());return}sendWS({type:"mensagem",text});messageInput.value="";resizeMessage()}
+function resizeMessage(){messageInput.style.height="auto";messageInput.style.height=Math.min(messageInput.scrollHeight,120)+"px"}
+function openMusic(){musicModal.classList.remove("hidden");musicSearch.value="";musicResults.innerHTML="";musicStatus.textContent="";setTimeout(()=>musicSearch.focus(),20)}
+async function searchMusic(){const q=musicSearch.value.trim();if(!q)return;musicStatus.textContent="Buscando...";musicResults.innerHTML="";try{const r=await fetch(`/api/music?q=${encodeURIComponent(q)}`);const d=await r.json();if(!r.ok||!d.ok){musicStatus.textContent=d.error||"Não foi possível buscar.";return}musicStatus.textContent=d.results.length?"":"Nenhum resultado.";d.results.forEach(addSearchResult)}catch{musicStatus.textContent="Falha de rede."}}
+async function searchAndQueue(q){const r=await fetch(`/api/music?q=${encodeURIComponent(q)}`);const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok||!d.results?.length){toast("Não encontrei essa música.",true);return}queueTrack(d.results[0])}
+function addSearchResult(item){const row=document.createElement("div");row.className="music-result";const img=document.createElement("img");img.src=item.thumbnail;const info=document.createElement("div");const b=document.createElement("strong");b.textContent=item.title;const s=document.createElement("span");s.textContent=item.channel;info.append(b,s);row.append(img,info);row.onclick=()=>{queueTrack(item);musicModal.classList.add("hidden")};musicResults.appendChild(row)}
+function queueTrack(item){sendWS({type:"fila_adicionar",id:item.id,title:item.title,channel:item.channel,thumbnail:item.thumbnail});toast("Adicionada à fila")}
+function openQueue(){renderQueue();queueModal.classList.remove("hidden")}
+function renderQueue(){queueList.innerHTML="";if(!queue.length){queueList.innerHTML='<div class="queue-empty">Nenhuma música aguardando.</div>';return}queue.forEach((m,i)=>{const row=document.createElement("div");row.className="queue-row";const n=document.createElement("b");n.textContent=String(i+1).padStart(2,"0");const img=document.createElement("img");img.src=m.thumbnail||"";const info=document.createElement("div");const title=document.createElement("strong");title.textContent=m.title;const channel=document.createElement("span");channel.textContent=m.channel||"";info.append(title,channel);row.append(n,img,info);queueList.appendChild(row)})}
+function updateMiniQueue(){queueCount.textContent=queue.length;miniQueue.innerHTML="";if(!queue.length){miniQueue.innerHTML='<div class="queue-empty">Fila vazia</div>';return}queue.slice(0,3).forEach(m=>{const d=document.createElement("div");d.className="mini-item";const img=document.createElement("img");img.src=m.thumbnail||"";const info=document.createElement("div");info.className="mini-info";const b=document.createElement("strong");b.textContent=m.title;const s=document.createElement("span");s.textContent=m.channel||"";info.append(b,s);d.append(img,info);miniQueue.appendChild(d)})}
 
-async function api(path, options = {}) {
-  const headers = new Headers(options.headers || {});
-  headers.set("content-type", "application/json");
-  if (sessionToken) headers.set("authorization", `Bearer ${sessionToken}`);
-  const resposta = await fetch(path, { ...options, headers });
-  const texto = await resposta.text();
-  let dados = {};
-  try { dados = texto ? JSON.parse(texto) : {}; } catch { dados = { ok: false, error: "Resposta inválida do servidor." }; }
-  return { resposta, dados };
+function applyRadioState(track,newQueue,initial=false){
+  queue=Array.isArray(newQueue)?newQueue:[];updateMiniQueue();
+  const oldId=currentTrack?.id||null;currentTrack=track||null;
+  if(!track){trackTitle.textContent="Nenhuma música";trackChannel.textContent="Adicione uma faixa para começar";cover.innerHTML='<div class="cover-letter">S</div><div class="cover-shine"></div>';playPause.disabled=true;nextTrack.disabled=true;progressBar.style.width="0%";timeCurrent.textContent="0:00";timeTotal.textContent="0:00";syncLabel.textContent="—";if(ytReady&&yt?.stopVideo)yt.stopVideo();loadedVideoId=null;return}
+  trackTitle.textContent=track.title;trackChannel.textContent=track.channel||"YouTube";playPause.disabled=false;nextTrack.disabled=false;playIcon.textContent=track.paused?"▶":"Ⅱ";cover.innerHTML="";if(track.thumbnail){const img=document.createElement("img");img.src=track.thumbnail;img.alt="";cover.append(img)}else{cover.innerHTML='<div class="cover-letter">S</div><div class="cover-shine"></div>'};sound.classList.toggle("hidden",audioOn);
+  const changed=oldId!==track.id;
+  if(changed||initial)loadTrack(track);else applySameTrackState(track);
 }
-
-function mostrarAuth(cadastro = false) {
-  loginModoCadastro = cadastro;
-  tituloAuth.textContent = cadastro ? "Criar sua conta" : "Entrar na Sala Sonora";
-  subtituloAuth.textContent = cadastro ? "Seu usuário ficará salvo para os próximos acessos." : "Entre com seu usuário e senha para continuar.";
-  btnAuth.textContent = cadastro ? "Criar conta" : "Entrar";
-  textoTrocarAuth.textContent = cadastro ? "Já tenho uma conta" : "Ainda não tenho conta";
-  erroAuth.textContent = "";
-  modalAuth.classList.remove("escondido");
-  setTimeout(() => inputLogin.focus(), 30);
+function targetPosition(track){if(track.paused)return Math.max(0,Number(track.position||0));return Math.max(0,(Date.now()-Number(track.startedAt||Date.now()))/1000)}
+function loadTrack(track){if(!ytReady){window.pendingTrack=track;return}loadedVideoId=track.id;const start=targetPosition(track);yt.loadVideoById({videoId:track.id,startSeconds:start});setTimeout(()=>{if(currentTrack?.id!==track.id)return;if(track.paused){yt.seekTo(Number(track.position||0),true);yt.pauseVideo()}else{if(!audioOn)yt.mute();yt.playVideo()}},250)}
+function applySameTrackState(track){
+  if(!ytReady||!yt||loadedVideoId!==track.id)return;
+  const target=targetPosition(track);
+  try{const now=Number(yt.getCurrentTime?.()||0);if(track.paused){yt.pauseVideo();if(Math.abs(now-target)>1.25)yt.seekTo(target,true)}else{if(Math.abs(now-target)>3.2)yt.seekTo(target,true);if(audioOn)yt.unMute();yt.playVideo()}syncLabel.textContent=track.paused?"pausado":"sincronizado";playIcon.textContent=track.paused?"▶":"Ⅱ"}catch{}
 }
+function togglePlayback(){if(!currentTrack)return;if(currentTrack.paused){playIcon.textContent="Ⅱ";sendWS({type:"continuar_musica"})}else{let pos=0;try{pos=yt?.getCurrentTime?.()||0;yt?.pauseVideo?.()}catch{};currentTrack={...currentTrack,position:pos,paused:true};playIcon.textContent="▶";sendWS({type:"pausar_musica",position:pos})}}
+function activateAudio(){audioOn=true;sound.classList.add("hidden");if(yt){yt.unMute();if(currentTrack?.paused)yt.pauseVideo();else yt.playVideo()}}
+function onYTReady(){ytReady=true;yt=window.__salaPlayer;if(window.pendingTrack){const p=window.pendingTrack;window.pendingTrack=null;loadTrack(p)}}
+window.onYouTubeIframeAPIReady=function(){window.__salaPlayer=new YT.Player("youtube-player",{height:"1",width:"1",playerVars:{autoplay:1,playsinline:1,controls:0,rel:0},events:{onReady:onYTReady,onStateChange:e=>{if(e.data===YT.PlayerState.ENDED&&currentTrack&&!currentTrack.paused)sendWS({type:"proxima_musica",videoId:currentTrack.id});if(e.data===YT.PlayerState.PLAYING&&currentTrack&&!currentTrack.paused){syncLabel.textContent="sincronizado";if(!audioOn)sound.classList.remove("hidden")}}}})};
+function updateProgress(){if(!currentTrack||!ytReady||loadedVideoId!==currentTrack.id)return;try{const cur=Number(yt.getCurrentTime?.()||0),dur=Number(yt.getDuration?.()||0);if(dur){progressBar.style.width=Math.min(100,cur/dur*100)+"%";timeTotal.textContent=fmt(dur)}timeCurrent.textContent=fmt(cur)}catch{}}
+function fmt(sec){sec=Math.max(0,Math.floor(sec||0));const m=Math.floor(sec/60),s=String(sec%60).padStart(2,"0");return `${m}:${s}`}
+setInterval(updateProgress,500);
 
-async function autenticar() {
-  const nome = inputLogin.value.trim();
-  const senha = inputSenhaLogin.value;
-  if (nome.length < 3) { erroAuth.textContent = "Digite um usuário com pelo menos 3 caracteres."; return; }
-  if (senha.length < 6) { erroAuth.textContent = "A senha deve ter pelo menos 6 caracteres."; return; }
-  btnAuth.disabled = true;
-  erroAuth.textContent = loginModoCadastro ? "Criando conta..." : "Entrando...";
-  const rota = loginModoCadastro ? "/api/auth/register" : "/api/auth/login";
-  try {
-    const { resposta, dados } = await api(rota, { method: "POST", body: JSON.stringify({ nome, senha }) });
-    if (!resposta.ok || !dados.ok) { erroAuth.textContent = dados.error || "Não foi possível continuar."; return; }
-    sessionToken = dados.token; meuId = dados.user.id; meuNome = dados.user.nome; meuRole = dados.user.role || "user"; salvarSessao();
-    modalAuth.classList.add("escondido");
-    await abrirApp();
-  } catch { erroAuth.textContent = "Falha de conexão."; }
-  finally { btnAuth.disabled = false; }
-}
+function buildAccentPicker(){accentPicker.innerHTML="";const names=["violet","blue","pink","green","amber","cyan"];names.forEach((name,i)=>{const b=document.createElement("button");b.className="accent";b.style.background=accents[i];b.classList.toggle("selected",selectedAccent===accents[i]);b.onclick=()=>{selectedAccent=accents[i];[...accentPicker.children].forEach((x,j)=>x.classList.toggle("selected",j===i))};accentPicker.appendChild(b)})}
+async function createRoom(){const nome=roomName.value.trim();const senha=roomPrivate.checked?roomPass.value:"";if(nome.length<2)return roomError.textContent="Dê um nome para a sala.";if(roomPrivate.checked&&senha.length<4)return roomError.textContent="A senha precisa ter pelo menos 4 caracteres.";roomError.textContent="Criando...";const names={"#":"violet"};const accentName=accents.indexOf(selectedAccent)===0?"violet":accents.indexOf(selectedAccent)===1?"blue":accents.indexOf(selectedAccent)===2?"pink":accents.indexOf(selectedAccent)===3?"green":accents.indexOf(selectedAccent)===4?"amber":"cyan";const {r,data}=await api("/api/rooms",{method:"POST",body:JSON.stringify({nome,senha,accent:accentName})});if(!r.ok||!data.ok){roomError.textContent=data.error||"Não foi possível criar.";return}roomModal.classList.add("hidden");await loadRooms();selectRoom(data.room.nome);toast(`Sala ${data.room.nome} criada`)}
 
-async function iniciar() {
-  montarEmojiPicker();
-  btnAuth.addEventListener("click", autenticar);
-  inputSenhaLogin.addEventListener("keydown", (e) => { if (e.key === "Enter") autenticar(); });
-  inputLogin.addEventListener("keydown", (e) => { if (e.key === "Enter") inputSenhaLogin.focus(); });
-  btnTrocarAuth.addEventListener("click", () => mostrarAuth(!loginModoCadastro));
-  btnSair.addEventListener("click", () => { if (confirm("Sair da conta neste navegador?")) { if (socket) socket.close(); limparSessao(); app.classList.add("escondido"); mostrarAuth(false); } });
+async function loadAdmin(){const {r,data}=await api("/api/admin/rooms");if(!r.ok||!data.ok){toast(data.error||"Acesso negado",true);return}adminRooms.innerHTML="";for(const room of data.rooms||[]){const row=document.createElement("div");row.className="admin-room";const info=document.createElement("div");info.className="admin-room-info";const b=document.createElement("strong");b.textContent=room.nome;const s=document.createElement("span");s.textContent=room.protegida?"Sala privada":"Sala pública";info.append(b,s);const clear=document.createElement("button");clear.textContent="Limpar";clear.onclick=async()=>{if(confirm(`Limpar o chat de #${room.nome}?`)){const x=await api(`/api/admin/rooms/${encodeURIComponent(room.nome)}/clear`,{method:"POST"});if(x.r.ok){toast("Conversa limpa");loadAdmin()}}};row.append(info,clear);if(room.nome!=="geral"){const del=document.createElement("button");del.className="delete";del.textContent="Excluir";del.onclick=async()=>{if(confirm(`Excluir a sala #${room.nome}?`)){const x=await api(`/api/admin/rooms/${encodeURIComponent(room.nome)}`,{method:"DELETE"});if(x.r.ok){if(currentRoom===room.nome){currentRoom="geral";connectRoom("geral")}await loadRooms();loadAdmin();toast("Sala excluída")}}};row.append(del)}adminRooms.appendChild(row)}}
+async function adminClearAll(){if(!confirm("Limpar as conversas de TODAS as salas?"))return;const {r,data}=await api("/api/admin/rooms/clear-all",{method:"POST"});if(r.ok&&data.ok){toast("Todos os chats foram limpos");adminModal.classList.add("hidden")}else toast(data.error||"Não foi possível limpar.",true)}
 
-  if (carregarSessao()) {
-    const { resposta, dados } = await api("/api/auth/me");
-    if (resposta.ok && dados.ok) await abrirApp();
-    else { limparSessao(); mostrarAuth(false); }
-  } else mostrarAuth(false);
-}
-
-async function abrirApp() {
-  app.classList.remove("escondido");
-  nomeUsuarioEl.textContent = meuNome;
-  const admin = meuRole === "admin";
-  badgeAdmin.classList.toggle("escondido", !admin);
-  btnAdmin.classList.toggle("escondido", !admin);
-  await carregarSalasServidor();
-  renderizarSalas();
-  if (!salas.some((s) => s.nome === salaAtual)) salaAtual = "geral";
-  trocarDeSala(salaAtual);
-  clearInterval(roomRefreshTimer);
-  roomRefreshTimer = setInterval(carregarSalasServidor, 5000);
-}
-
-async function carregarSalasServidor() {
-  const { resposta, dados } = await api("/api/rooms");
-  if (!resposta.ok || !dados.ok) return;
-  const atual = salas.find((s) => s.nome === salaAtual);
-  salas = dados.rooms || [];
-  renderizarSalas();
-  const novaAtual = salas.find((s) => s.nome === salaAtual);
-  if (novaAtual && atual && novaAtual.protegida !== atual.protegida && socket) { trocarDeSala(salaAtual); }
-}
-
-function renderizarSalas() {
-  listaSalasEl.innerHTML = "";
-  for (const sala of salas) {
-    const item = document.createElement("li");
-    item.tabIndex = 0;
-    item.className = sala.nome === salaAtual ? "ativa" : "";
-    item.innerHTML = `<span class="room-symbol">${sala.protegida ? "·" : (sala.emoji || "#")}</span><span>${sala.nome}</span>`;
-    item.addEventListener("click", () => trocarDeSala(sala.nome));
-    listaSalasEl.appendChild(item);
-  }
-}
-
-function trocarDeSala(nome) {
-  if (!salas.some((s) => s.nome === nome)) return;
-  if (nome === salaAtual && socket && socket.readyState === WebSocket.OPEN) return;
-  salaAtual = nome;
-  localStorage.setItem("salaAtual", salaAtual);
-  renderizarSalas();
-  const sala = salaAtualObjeto();
-  emojiSalaAtual.textContent = sala.emoji || "#";
-  nomeSalaAtual.textContent = nome;
-  listaMensagens.innerHTML = "";
-  btnLimparConversa.classList.toggle("escondido", sala.ownerId !== meuId);
-  conectarWebSocket(nome);
-}
-
-function salaAtualObjeto() { return salas.find((s) => s.nome === salaAtual) || { nome: salaAtual, emoji: "#", protegida: false, ownerId: "" }; }
-
-function montarEmojiPicker() {
-  emojiPicker.innerHTML = "";
-  for (const emoji of EMOJIS_SALA) {
-    const b = document.createElement("button"); b.type = "button"; b.textContent = emoji; b.setAttribute("aria-label", `Ícone ${emoji}`);
-    if (emoji === emojiEscolhido) b.classList.add("selecionado");
-    b.addEventListener("click", () => { emojiEscolhido = emoji; montarEmojiPicker(); });
-    emojiPicker.appendChild(b);
-  }
-}
-
-async function carregarPainelAdmin() {
-  const { resposta, dados } = await api("/api/rooms");
-  if (!resposta.ok || !dados.ok) return;
-  listaAdminSalas.innerHTML = "";
-  for (const sala of dados.rooms || []) {
-    const item = document.createElement("div"); item.className = "item-admin-sala";
-    const info = document.createElement("div"); info.className = "admin-sala-info";
-    const nome = document.createElement("strong"); nome.textContent = `${sala.protegida ? "·" : (sala.emoji || "#")} ${sala.nome}`;
-    const dono = document.createElement("span"); dono.textContent = sala.ownerName ? `Criada por ${sala.ownerName}` : "Sala do sistema";
-    info.append(nome, dono);
-    const acoes = document.createElement("div"); acoes.className = "admin-sala-acoes";
-    const limpar = document.createElement("button"); limpar.className = "btn-secundario"; limpar.textContent = "Limpar";
-    limpar.addEventListener("click", async () => {
-      if (!confirm(`Limpar todas as mensagens da sala #${sala.nome}?`)) return;
-      const r = await api(`/api/admin/rooms/${encodeURIComponent(sala.nome)}/clear`, { method: "POST" });
-      if (!r.resposta.ok || !r.dados.ok) alert(r.dados.error || "Não foi possível limpar a sala.");
-      else if (sala.nome === salaAtual) listaMensagens.innerHTML = "";
-    });
-    acoes.appendChild(limpar);
-    if (sala.nome !== "geral") {
-      const apagar = document.createElement("button"); apagar.className = "btn-perigo"; apagar.textContent = "Apagar sala";
-      apagar.addEventListener("click", async () => {
-        if (!confirm(`APAGAR a sala #${sala.nome} e todo o histórico dela?`)) return;
-        const r = await api(`/api/admin/rooms/${encodeURIComponent(sala.nome)}`, { method: "DELETE" });
-        if (!r.resposta.ok || !r.dados.ok) { alert(r.dados.error || "Não foi possível apagar a sala."); return; }
-        if (sala.nome === salaAtual) { if (socket) { socket.onclose = null; socket.close(); } salaAtual = "geral"; localStorage.setItem("salaAtual", "geral"); }
-        await carregarSalasServidor();
-        trocarDeSala("geral");
-        await carregarPainelAdmin();
-      });
-      acoes.appendChild(apagar);
-    }
-    item.append(info, acoes); listaAdminSalas.appendChild(item);
-  }
-}
-
-btnAdmin.addEventListener("click", async () => { if (meuRole !== "admin") return; modalAdmin.classList.remove("escondido"); await carregarPainelAdmin(); });
-btnFecharAdmin.addEventListener("click", () => modalAdmin.classList.add("escondido"));
-btnAdminLimparTudo.addEventListener("click", async () => {
-  if (!confirm("ATENÇÃO: limpar as mensagens de TODAS as salas? Essa ação não pode ser desfeita.")) return;
-  const r = await api("/api/admin/rooms/clear-all", { method: "POST" });
-  if (!r.resposta.ok || !r.dados.ok) alert(r.dados.error || "Não foi possível limpar as conversas.");
-  else { listaMensagens.innerHTML = ""; alert("Todas as conversas foram limpas."); }
-});
-
-btnNovaSala.addEventListener("click", () => {
-  inputSala.value = ""; inputSalaSenha.value = ""; checkSalaSenha.checked = false; inputSalaSenha.classList.add("escondido"); erroSala.textContent = ""; modalSala.classList.remove("escondido"); inputSala.focus();
-});
-checkSalaSenha.addEventListener("change", () => { inputSalaSenha.classList.toggle("escondido", !checkSalaSenha.checked); if (checkSalaSenha.checked) inputSalaSenha.focus(); });
-btnCancelarSala.addEventListener("click", () => modalSala.classList.add("escondido"));
-btnCriarSala.addEventListener("click", async () => {
-  const nome = inputSala.value.trim().toLowerCase().replace(/\s+/g, "-");
-  const senha = inputSalaSenha.value;
-  if (!nome) { erroSala.textContent = "Digite um nome para a sala."; return; }
-  if (checkSalaSenha.checked && senha.length < 4) { erroSala.textContent = "Use uma senha com pelo menos 4 caracteres."; return; }
-  btnCriarSala.disabled = true;
-  const { resposta, dados } = await api("/api/rooms", { method: "POST", body: JSON.stringify({ nome, emoji: emojiEscolhido, senha: checkSalaSenha.checked ? senha : "" }) });
-  btnCriarSala.disabled = false;
-  if (!resposta.ok || !dados.ok) { erroSala.textContent = dados.error || "Não foi possível criar a sala."; return; }
-  modalSala.classList.add("escondido");
-  await carregarSalasServidor();
-  trocarDeSala(nome);
-});
-
-btnCancelarSenha.addEventListener("click", () => { modalSenhaSala.classList.add("escondido"); if (socket) { socket.onclose = null; socket.close(); } });
-btnEntrarSenha.addEventListener("click", () => { const senha = inputEntrarSenha.value; if (!senha) { erroSenhaSala.textContent = "Digite a senha."; return; } erroSenhaSala.textContent = ""; modalSenhaSala.classList.add("escondido"); enviarEntradaNaSala(senha); });
-inputEntrarSenha.addEventListener("keydown", (e) => { if (e.key === "Enter") btnEntrarSenha.click(); });
-
-async function hashLocal(senha) {
-  const bytes = new TextEncoder().encode(String(senha));
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function conectarWebSocket(nomeSala) {
-  if (socket) { socket.onclose = null; socket.close(); }
-  presencaSala.textContent = "conectando...";
-  const protocolo = location.protocol === "https:" ? "wss:" : "ws:";
-  socket = new WebSocket(`${protocolo}//${location.host}/ws?room=${encodeURIComponent(nomeSala)}&token=${encodeURIComponent(sessionToken)}`);
-  socket.addEventListener("open", () => { presencaSala.textContent = "autenticando..."; conexaoAutenticada = false; enviarEntradaNaSala(); });
-  socket.addEventListener("message", (evento) => { try { tratarEventoServidor(JSON.parse(evento.data)); } catch {} });
-  socket.addEventListener("close", () => { presencaSala.textContent = "desconectado — reconectando..."; setTimeout(() => { if (salaAtual === nomeSala && sessionToken) conectarWebSocket(nomeSala); }, 1500); });
-  socket.addEventListener("error", () => { presencaSala.textContent = "erro de conexão"; });
-}
-
-async function enviarEntradaNaSala(senhaOverride = null) {
-  const sala = salaAtualObjeto();
-  let senhaHash = "";
-  if (senhaOverride !== null) senhaHash = await hashLocal(senhaOverride);
-  enviarWS({ type: "entrar", senhaHash });
-}
-function enviarWS(objeto) { if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(objeto)); }
-
-function tratarEventoServidor(dados) {
-  switch (dados.type) {
-    case "autenticacao_necessaria":
-      conexaoAutenticada = false;
-      if (dados.protegida) { erroSenhaSala.textContent = ""; inputEntrarSenha.value = ""; modalSenhaSala.classList.remove("escondido"); inputEntrarSenha.focus(); }
-      else enviarEntradaNaSala();
-      break;
-    case "estado_inicial":
-      conexaoAutenticada = true; btnLimparConversa.classList.toggle("escondido", dados.ownerId !== meuId); listaMensagens.innerHTML = ""; for (const msg of dados.mensagens || []) renderizarMensagem(msg); rolarParaFinal(); atualizarPainelRadio(dados.tocandoAgora, dados.fila); break;
-    case "mensagem": renderizarMensagem(dados.mensagem); rolarParaFinal(); break;
-    case "mensagens_limpas": listaMensagens.innerHTML = ""; adicionarMensagemSistema("Conversa limpa pelo criador da sala."); break;
-    case "reacao": atualizarReacaoNaTela(dados.messageId, dados.emoji, dados.total); break;
-    case "presenca": presencaSala.textContent = `${dados.total} ${dados.total === 1 ? "pessoa" : "pessoas"} na sala`; break;
-    case "tocando_agora": atualizarPainelRadio(dados.tocandoAgora, dados.fila); break;
-    case "erro":
-      if (dados.code === "SENHA_INCORRETA" || dados.code === "SENHA_NECESSARIA") { conexaoAutenticada = false; erroSenhaSala.textContent = dados.message; modalSenhaSala.classList.remove("escondido"); inputEntrarSenha.focus(); }
-      else adicionarMensagemSistema(dados.message);
-      break;
-  }
-}
-
-function renderizarMensagem(msg) {
-  const wrapper = document.createElement("div");
-  wrapper.className = `mensagem-wrapper ${msg.autorId === meuId ? "minha" : "outra"}`;
-  wrapper.dataset.id = msg.id;
-  const avatar = document.createElement("div"); avatar.className = "avatar-mensagem"; avatar.textContent = (msg.autorId === meuId ? meuNome : msg.nome || "?").slice(0, 2).toUpperCase();
-  const corpo = document.createElement("div"); corpo.className = "mensagem-corpo";
-  const cabecalho = document.createElement("div"); cabecalho.className = "mensagem-cabecalho";
-  const nomeSpan = document.createElement("span"); nomeSpan.className = "mensagem-nome"; nomeSpan.textContent = msg.autorId === meuId ? "Você" : msg.nome;
-  const horaSpan = document.createElement("span"); horaSpan.className = "mensagem-hora"; horaSpan.textContent = new Date(msg.ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  cabecalho.append(nomeSpan, horaSpan);
-  const textoDiv = document.createElement("div"); textoDiv.className = "mensagem-texto"; textoDiv.textContent = msg.text;
-  const reacoesDiv = document.createElement("div"); reacoesDiv.className = "mensagem-reacoes";
-  for (const emoji of ["+1", "Love", "Haha"]) reacoesDiv.appendChild(criarChipReacao(msg.id, emoji, msg.reacoes?.[emoji] || 0));
-  corpo.append(cabecalho, textoDiv, reacoesDiv); wrapper.append(avatar, corpo); listaMensagens.appendChild(wrapper);
-}
-function criarChipReacao(messageId, emoji, total) { const chip = document.createElement("button"); chip.type = "button"; chip.className = "chip-reacao"; chip.dataset.emoji = emoji; chip.textContent = total > 0 ? `${emoji} ${total}` : emoji; chip.addEventListener("click", () => enviarWS({ type: "reacao", messageId, emoji })); return chip; }
-function atualizarReacaoNaTela(messageId, emoji, total) { const wrapper = listaMensagens.querySelector(`[data-id="${CSS.escape(messageId)}"]`); if (!wrapper) return; const chip = wrapper.querySelector(`.chip-reacao[data-emoji="${CSS.escape(emoji)}"]`); if (chip) { chip.textContent = total > 0 ? `${emoji} ${total}` : emoji; chip.classList.add("ativa"); } }
-function adicionarMensagemSistema(texto) { const div = document.createElement("div"); div.className = "mensagem-sistema"; div.textContent = texto; listaMensagens.appendChild(div); rolarParaFinal(); }
-function rolarParaFinal() { listaMensagens.scrollTop = listaMensagens.scrollHeight; }
-
-function enviarMensagemAtual() {
-  const texto = inputMensagem.value.trim(); if (!texto) return;
-  if (texto.toLowerCase().startsWith("!play ")) { const termo = texto.slice(6).trim(); inputMensagem.value = ""; ajustarAlturaTextarea(); if (termo) tocarPorComando(termo); return; }
-  enviarWS({ type: "mensagem", text: texto }); inputMensagem.value = ""; ajustarAlturaTextarea();
-}
-btnEnviar.addEventListener("click", enviarMensagemAtual);
-inputMensagem.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviarMensagemAtual(); } });
-inputMensagem.addEventListener("input", ajustarAlturaTextarea);
-function ajustarAlturaTextarea() { inputMensagem.style.height = "auto"; inputMensagem.style.height = Math.min(inputMensagem.scrollHeight, 140) + "px"; }
-async function tocarPorComando(termo) { adicionarMensagemSistema(`Buscando "${termo}" para tocar...`); const resultado = await buscarMusicaAPI(termo); if (!resultado.ok || !resultado.results.length) { adicionarMensagemSistema(`Não encontrei nada para "${termo}".`); return; } selecionarMusica(resultado.results[0]); }
-
-btnAbrirBusca.addEventListener("click", () => { modalMusica.classList.remove("escondido"); inputBuscaMusica.value = ""; resultadosMusica.innerHTML = ""; statusBusca.textContent = ""; inputBuscaMusica.focus(); });
-btnFecharMusica.addEventListener("click", () => modalMusica.classList.add("escondido"));
-btnBuscarMusica.addEventListener("click", executarBusca);
-inputBuscaMusica.addEventListener("keydown", (e) => { if (e.key === "Enter") executarBusca(); });
-async function executarBusca() { const termo = inputBuscaMusica.value.trim(); if (!termo) return; statusBusca.textContent = "Buscando..."; resultadosMusica.innerHTML = ""; const resultado = await buscarMusicaAPI(termo); if (!resultado.ok) { statusBusca.textContent = `Erro: ${resultado.error || "não foi possível buscar."}`; return; } if (!resultado.results.length) { statusBusca.textContent = "Nenhum resultado encontrado."; return; } statusBusca.textContent = ""; resultado.results.forEach((item) => resultadosMusica.appendChild(criarLinhaResultado(item))); }
-async function buscarMusicaAPI(termo) { try { const resposta = await fetch(`/api/music?q=${encodeURIComponent(termo)}`); const texto = await resposta.text(); const dados = texto ? JSON.parse(texto) : {}; if (!resposta.ok || dados.ok === false) return { ok: false, error: dados.error || `status ${resposta.status}` }; return { ok: true, results: dados.results || [] }; } catch { return { ok: false, error: "falha de rede." }; } }
-function criarLinhaResultado(item) { const linha = document.createElement("div"); linha.className = "resultado-musica"; const img = document.createElement("img"); img.src = item.thumbnail; img.alt = ""; const info = document.createElement("div"); info.className = "resultado-info"; const titulo = document.createElement("div"); titulo.className = "resultado-titulo"; titulo.textContent = item.title; const canal = document.createElement("div"); canal.className = "resultado-canal"; canal.textContent = item.channel; info.append(titulo, canal); linha.append(img, info); linha.addEventListener("click", () => { selecionarMusica(item); modalMusica.classList.add("escondido"); }); return linha; }
-function selecionarMusica(item) { enviarWS({ type: "fila_adicionar", id: item.id, title: item.title, channel: item.channel, thumbnail: item.thumbnail }); }
-
-btnPausarMusica.addEventListener("click", () => {
-  if (!tocandoAgoraAtual) return;
-  if (tocandoAgoraAtual.paused) enviarWS({ type: "continuar_musica" });
-  else {
-    let position = Number(tocandoAgoraAtual.position || 0);
-    try { if (ytPlayer && typeof ytPlayer.getCurrentTime === "function") position = ytPlayer.getCurrentTime(); } catch {}
-    enviarWS({ type: "pausar_musica", position });
-  }
-});
-btnPularMusica.addEventListener("click", () => enviarWS({ type: "proxima_musica", videoId: tocandoAgoraAtual?.id }));
-btnLimparConversa.addEventListener("click", () => { if (confirm("Limpar todas as mensagens desta sala para todos?")) enviarWS({ type: "limpar_mensagens" }); });
-btnAbrirFila.addEventListener("click", () => { modalFila.classList.remove("escondido"); renderizarFila(filaAtual); });
-if (btnAbrirFilaRail) btnAbrirFilaRail.addEventListener("click", () => { modalFila.classList.remove("escondido"); renderizarFila(filaAtual); });
-btnFecharFila.addEventListener("click", () => modalFila.classList.add("escondido"));
-
-function renderizarFila(fila) {
-  filaAtual = Array.isArray(fila) ? fila : [];
-  listaFila.innerHTML = "";
-  if (!filaAtual.length) {
-    const vazio = document.createElement("div"); vazio.className = "fila-vazia"; vazio.textContent = "A fila está vazia."; listaFila.appendChild(vazio); return;
-  }
-  filaAtual.forEach((musica, index) => {
-    const item = document.createElement("div"); item.className = "item-fila";
-    const numero = document.createElement("span"); numero.className = "fila-numero"; numero.textContent = String(index + 1).padStart(2, "0");
-    const img = document.createElement("img"); img.src = musica.thumbnail || ""; img.alt = "";
-    const info = document.createElement("div"); info.className = "fila-info";
-    const titulo = document.createElement("div"); titulo.className = "fila-titulo"; titulo.textContent = musica.title;
-    const canal = document.createElement("div"); canal.className = "fila-canal"; canal.textContent = musica.channel || "";
-    info.append(titulo, canal); item.append(numero, img, info); listaFila.appendChild(item);
-  });
-}
-
-btnAtivarAudio.addEventListener("click", () => {
-  audioLiberado = true; btnAtivarAudio.classList.add("escondido");
-  if (ytPlayer?.unMute) { ytPlayer.unMute(); ytPlayer.playVideo(); }
-});
-
-function atualizarPainelRadio(tocandoAgora, fila) {
-  const musicaAnterior = tocandoAgoraAtual;
-  tocandoAgoraAtual = tocandoAgora;
-  filaAtual = Array.isArray(fila) ? fila : [];
-  renderizarFila(filaAtual);
-
-  if (!tocandoAgora) {
-    tituloRadio.textContent = "Nenhuma música tocando";
-    artistaRadio.textContent = "Adicione uma faixa para começar";
-    miniRadioTitulo.textContent = "Nenhuma música tocando";
-    capaRadio.innerHTML = '<div class="cover-placeholder">♪</div>';
-    capaRadio.classList.remove("tocando");
-    btnPausarMusica.classList.add("escondido"); btnPularMusica.classList.add("escondido");
-    filaPreview.textContent = "Fila vazia"; pararPlayer(); loadedVideoId = null; return;
-  }
-
-  tituloRadio.textContent = tocandoAgora.title;
-  artistaRadio.textContent = tocandoAgora.channel || "Tocando agora";
-  miniRadioTitulo.textContent = tocandoAgora.title;
-  btnPausarMusica.classList.remove("escondido"); btnPularMusica.classList.remove("escondido");
-  btnPausarMusica.textContent = tocandoAgora.paused ? "Continuar" : "Pausar";
-  capaRadio.innerHTML = "";
-  if (tocandoAgora.thumbnail) { const img = document.createElement("img"); img.src = tocandoAgora.thumbnail; img.alt = ""; capaRadio.appendChild(img); }
-  else capaRadio.innerHTML = '<div class="cover-placeholder">♪</div>';
-  capaRadio.classList.toggle("tocando", !tocandoAgora.paused);
-  filaPreview.textContent = filaAtual.length ? `${filaAtual.length} ${filaAtual.length === 1 ? "música na fila" : "músicas na fila"}` : "Fila vazia";
-
-  // Só troca o vídeo quando a faixa mudou. Atualizações de fila, presença ou estado
-  // não podem recarregar a música atual, pois isso fazia o player voltar ao início.
-  if (!musicaAnterior || musicaAnterior.id !== tocandoAgora.id) {
-    reproduzir(tocandoAgora, true);
-  } else {
-    sincronizarPlayerComEstado(tocandoAgora);
-  }
-}
-
-let loadedVideoId = null;
-function tempoEsperado(musica) {
-  if (musica.paused) return Math.max(0, Number(musica.position || 0));
-  return Math.max(0, (Date.now() - Number(musica.startedAt || Date.now())) / 1000);
-}
-
-function reproduzir(musica, trocarVideo = false) {
-  if (!ytPronto) { ytPendente = musica; return; }
-  btnAtivarAudio.classList.toggle("escondido", audioLiberado);
-  if (trocarVideo || loadedVideoId !== musica.id) {
-    loadedVideoId = musica.id;
-    ytPlayer.loadVideoById({ videoId: musica.id, startSeconds: tempoEsperado(musica) });
-  } else {
-    sincronizarPlayerComEstado(musica);
-  }
-  if (!audioLiberado) ytPlayer.mute(); else ytPlayer.unMute();
-  if (musica.paused) setTimeout(() => { if (ytPlayer && tocandoAgoraAtual?.id === musica.id && tocandoAgoraAtual.paused) { ytPlayer.seekTo(Number(musica.position || 0), true); ytPlayer.pauseVideo(); } }, 300);
-}
-
-function sincronizarPlayerComEstado(musica) {
-  if (!ytPronto || !ytPlayer || loadedVideoId !== musica.id) return;
-  const alvo = tempoEsperado(musica);
-  try {
-    const atual = Number(ytPlayer.getCurrentTime?.() || 0);
-    if (Math.abs(atual - alvo) > 2.5) ytPlayer.seekTo(alvo, true);
-    if (musica.paused) ytPlayer.pauseVideo();
-    else if (typeof ytPlayer.playVideo === "function") ytPlayer.playVideo();
-  } catch {}
-}
-
-function pararPlayer() { if (ytPronto && ytPlayer?.stopVideo) ytPlayer.stopVideo(); }
-window.onYouTubeIframeAPIReady = function () {
-  ytPlayer = new YT.Player("player-youtube", { height: "1", width: "1", playerVars: { autoplay: 1, playsinline: 1 }, events: {
-    onReady: () => { ytPronto = true; if (ytPendente) { const p = ytPendente; ytPendente = null; reproduzir(p, true); } },
-    onStateChange: (evento) => {
-      if (evento.data === YT.PlayerState.ENDED && tocandoAgoraAtual) enviarWS({ type: "proxima_musica", videoId: tocandoAgoraAtual.id });
-      if (evento.data === YT.PlayerState.PAUSED && !audioLiberado && tocandoAgoraAtual && !tocandoAgoraAtual.paused) btnAtivarAudio.classList.remove("escondido");
-    },
-  }});
-};
-
-iniciar();
+boot();
