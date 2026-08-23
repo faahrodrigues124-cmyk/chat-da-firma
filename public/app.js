@@ -26,7 +26,6 @@ let roomPoll = null;
 let soundEnabled = true;
 let lastIncomingMessageId = null;
 let lastMusicId = null;
-let clockOffset = 0; // diferença estimada entre o relógio do servidor e o do navegador
 
 const $ = (id) => document.getElementById(id);
 const auth = $("auth");
@@ -362,7 +361,6 @@ function handleServer(d) {
   }
   if (d.type === "estado_inicial") {
     authenticated = true; passwordModal.classList.add("hidden");
-    if (d.serverTime) clockOffset = d.serverTime - Date.now();
     const room = rooms.find(x => x.nome === currentRoom);
     currentRoomEl.textContent = currentRoom; roomBadge.textContent = initials(currentRoom).slice(0, 1); roomBadge.style.color = roomColor(room);
     clearRoom.classList.toggle("hidden", d.ownerId !== user.id && user.role !== "admin");
@@ -380,7 +378,6 @@ function handleServer(d) {
   if (d.type === "reacao") { updateReaction(d.messageId, d.emoji, d.total); return; }
   if (d.type === "presenca") { presence.textContent = `${d.total} ${d.total === 1 ? "pessoa" : "pessoas"} na sala`; return; }
   if (d.type === "tocando_agora") {
-    if (d.serverTime) clockOffset = d.serverTime - Date.now();
     const nextId = d.tocandoAgora?.id || null;
     const wasMusic = lastMusicId;
     applyRadioState(d.tocandoAgora, d.fila, false);
@@ -463,14 +460,11 @@ function applyRadioState(track, newQueue, initial = false) {
   currentTrack = track || null;
   if (!track) {
     trackTitle.textContent = "Nenhuma música"; trackChannel.textContent = "Adicione uma faixa para começar"; cover.innerHTML = '<div class="cover-letter">S</div><div class="cover-shine"></div>';
-    cover.classList.remove("playing");
     playPause.disabled = true; nextTrack.disabled = true; progressBar.style.width = "0%"; timeCurrent.textContent = "0:00"; timeTotal.textContent = "0:00"; syncLabel.textContent = "—";
     if (ytReady && yt?.stopVideo) try { yt.stopVideo(); } catch {} loadedVideoId = null; lastMusicId = null; return;
   }
   trackTitle.textContent = track.title; trackChannel.textContent = track.channel || "YouTube"; playPause.disabled = false; nextTrack.disabled = false; playIcon.innerHTML = icon(track.paused ? "play" : "pause", 18);
   cover.innerHTML = ""; if (track.thumbnail) { const img = document.createElement("img"); img.src = track.thumbnail; img.alt = ""; cover.append(img); } else cover.innerHTML = '<div class="cover-letter">S</div><div class="cover-shine"></div>';
-  cover.insertAdjacentHTML("beforeend", '<div class="eq"><span></span><span></span><span></span><span></span></div>');
-  cover.classList.toggle("playing", !track.paused);
   const changed = oldId !== track.id;
   const pauseChanged = old && old.id === track.id && old.paused !== track.paused;
   if (changed || initial) loadTrack(track);
@@ -479,11 +473,7 @@ function applyRadioState(track, newQueue, initial = false) {
 }
 function targetPosition(track) {
   if (track.paused) return Math.max(0, Number(track.position || 0));
-  // Usamos Date.now() + clockOffset (relógio do servidor estimado) em vez do
-  // relógio local puro. Se o relógio do navegador de quem entra estiver
-  // atrasado em relação ao servidor, o cálculo sem essa correção pode dar um
-  // valor negativo e a música reinicia do zero — é isso que corrigimos aqui.
-  return Math.max(0, (Date.now() + clockOffset - Number(track.startedAt || Date.now())) / 1000);
+  return Math.max(0, (Date.now() - Number(track.startedAt || Date.now())) / 1000);
 }
 function loadTrack(track) {
   if (!ytReady || !yt) { window.pendingTrack = track; return; }
@@ -517,7 +507,6 @@ function applySameTrackState(track, transition = false) {
     if (track.paused) { yt.pauseVideo(); if (Math.abs(now - target) > 1.0) yt.seekTo(target, true); }
     else { if (transition || Math.abs(now - target) > 4.5) yt.seekTo(target, true); if (audioOn) yt.unMute(); else yt.mute(); yt.playVideo(); }
     playIcon.innerHTML = icon(track.paused ? "play" : "pause", 18); syncLabel.textContent = track.paused ? "pausado" : "ao vivo";
-    cover.classList.toggle("playing", !track.paused);
   } catch {}
 }
 function togglePlayback() {
@@ -526,7 +515,7 @@ function togglePlayback() {
   if (currentTrack.paused) { if (sendWS({ type: "continuar_musica" })) syncLabel.textContent = "retomando…"; }
   else {
     let pos = targetPosition(currentTrack); try { if (yt && loadedVideoId === currentTrack.id) pos = yt.getCurrentTime(); yt?.pauseVideo?.(); } catch {}
-    if (sendWS({ type: "pausar_musica", position: pos })) { currentTrack = { ...currentTrack, position: pos, paused: true }; playIcon.innerHTML = icon("play", 18); syncLabel.textContent = "pausado"; cover.classList.remove("playing"); }
+    if (sendWS({ type: "pausar_musica", position: pos })) { currentTrack = { ...currentTrack, position: pos, paused: true }; playIcon.innerHTML = icon("play", 18); syncLabel.textContent = "pausado"; }
   }
 }
 function onYTReady() { ytReady = true; yt = window.__salaPlayer; if (window.pendingTrack) { const p = window.pendingTrack; window.pendingTrack = null; loadTrack(p); } }
@@ -549,17 +538,7 @@ window.onYouTubeIframeAPIReady = function () {
 if (window.YT?.Player && !yt) window.onYouTubeIframeAPIReady();
 function updateProgress() {
   if (!currentTrack || !ytReady || loadedVideoId !== currentTrack.id) return;
-  try {
-    const cur = Number(yt.getCurrentTime?.() || 0), dur = Number(yt.getDuration?.() || 0);
-    if (dur) { progressBar.style.width = `${Math.min(100, cur / dur * 100)}%`; timeTotal.textContent = fmt(dur); }
-    timeCurrent.textContent = fmt(cur);
-    // Correção suave de deriva: se alguém ficar tocando por muito tempo e o
-    // relógio local desviar um pouco, realinha sozinho sem ninguém perceber.
-    if (!currentTrack.paused) {
-      const target = targetPosition(currentTrack);
-      if (Math.abs(cur - target) > 4) yt.seekTo(target, true);
-    }
-  } catch {}
+  try { const cur = Number(yt.getCurrentTime?.() || 0), dur = Number(yt.getDuration?.() || 0); if (dur) { progressBar.style.width = `${Math.min(100, cur / dur * 100)}%`; timeTotal.textContent = fmt(dur); } timeCurrent.textContent = fmt(cur); } catch {}
 }
 function fmt(sec) { sec = Math.max(0, Math.floor(sec || 0)); const m = Math.floor(sec / 60), s = String(sec % 60).padStart(2, "0"); return `${m}:${s}`; }
 setInterval(updateProgress, 500);
