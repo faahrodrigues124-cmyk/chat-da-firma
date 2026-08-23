@@ -330,7 +330,7 @@ export class ChatRoom {
     if (d.type === "entrar") {
       if (this.senhaHash && d.senhaHash !== this.senhaHash) { this.enviar(socket, { type: "erro", code: "SENHA_INCORRETA", message: "Senha da sala incorreta." }); return; }
       s.autenticado = true;
-      this.enviar(socket, { type: "estado_inicial", mensagens: this.mensagens, fila: this.fila, tocandoAgora: this.tocandoAgora, ownerId: this.ownerId }); this.presenca(); return;
+      this.enviar(socket, { type: "estado_inicial", mensagens: this.mensagens, fila: this.fila, tocandoAgora: this.tocandoAgora, ownerId: this.ownerId, serverTime: Date.now() }); this.presenca(); return;
     }
     if (!s.autenticado) return;
     if (d.type === "mensagem") {
@@ -350,26 +350,26 @@ export class ChatRoom {
       if (!this.tocandoAgora) this.tocandoAgora = { ...music, startedAt: Date.now(), position: 0, paused: false };
       else if (this.fila.length < MAX_FILA) this.fila.push(music);
       else return this.enviar(socket, { type: "erro", message: "Fila cheia." });
-      await this.persistir(); this.transmitir({ type: "tocando_agora", tocandoAgora: this.tocandoAgora, fila: this.fila }); return;
+      await this.persistir(); this.transmitir({ type: "tocando_agora", tocandoAgora: this.tocandoAgora, fila: this.fila, serverTime: Date.now() }); return;
     }
     if (d.type === "pausar_musica") {
       if (!this.tocandoAgora || this.tocandoAgora.paused) return;
       let position = Number(d.position); if (!Number.isFinite(position) || position < 0) position = Math.max(0, (Date.now() - this.tocandoAgora.startedAt) / 1000);
       this.tocandoAgora = { ...this.tocandoAgora, position, paused: true, pausedAt: Date.now() };
-      await this.persistir(); this.transmitir({ type: "tocando_agora", tocandoAgora: this.tocandoAgora, fila: this.fila }); return;
+      await this.persistir(); this.transmitir({ type: "tocando_agora", tocandoAgora: this.tocandoAgora, fila: this.fila, serverTime: Date.now() }); return;
     }
     if (d.type === "continuar_musica") {
       if (!this.tocandoAgora || !this.tocandoAgora.paused) return;
       const position = Number(this.tocandoAgora.position || 0);
       this.tocandoAgora = { ...this.tocandoAgora, position, startedAt: Date.now() - position * 1000, paused: false, pausedAt: 0 };
-      await this.persistir(); this.transmitir({ type: "tocando_agora", tocandoAgora: this.tocandoAgora, fila: this.fila }); return;
+      await this.persistir(); this.transmitir({ type: "tocando_agora", tocandoAgora: this.tocandoAgora, fila: this.fila, serverTime: Date.now() }); return;
     }
     if (d.type === "proxima_musica") {
       if (!this.tocandoAgora) return;
       if (d.videoId && d.videoId !== this.tocandoAgora.id) return;
       const now = Date.now(); if (now - this.ultimoAvancoEm < 3500) return; this.ultimoAvancoEm = now;
       this.tocandoAgora = this.fila.length ? { ...this.fila.shift(), startedAt: now, position: 0, paused: false } : null;
-      await this.persistir(); this.transmitir({ type: "tocando_agora", tocandoAgora: this.tocandoAgora, fila: this.fila }); return;
+      await this.persistir(); this.transmitir({ type: "tocando_agora", tocandoAgora: this.tocandoAgora, fila: this.fila, serverTime: Date.now() }); return;
     }
   }
 }
