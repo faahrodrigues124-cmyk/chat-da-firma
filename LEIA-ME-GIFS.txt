@@ -1,0 +1,12 @@
+Sala Sonora — GIFs
+
+O botão GIF abre uma biblioteca com:
+- GIFs em destaque;
+- pesquisa por palavra;
+- categorias rápidas;
+- envio direto para o chat.
+
+Não é necessário cadastrar CHAVE_API_DO_GIPHY no Cloudflare nesta versão.
+A chave da biblioteca fica somente no Worker e não é enviada ao navegador.
+
+Mantenha CHAVE_API_DO_YOUTUBE normalmente configurada no Runtime variables and secrets.
