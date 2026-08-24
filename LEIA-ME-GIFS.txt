@@ -1,0 +1,26 @@
+ATUALIZAÇÃO — GIFS + ÍCONES + MIXER
+
+O projeto agora tem:
+- botão de GIF com picker integrado;
+- GIFs em destaque + pesquisa + categorias;
+- somente conteúdo G (filtro de classificação geral);
+- envio de GIF pelo chat sem selecionar arquivo;
+- envio de imagens pelo botão de imagem, com compressão automática;
+- ícones SVG modernos no composer;
+- mixer individual de volume (0–100%) salvo no navegador de cada usuário;
+- mute independente do volume;
+- histórico de mensagens com mídia.
+
+GIPHY
+A biblioteca usa a API do GIPHY por um endpoint do Worker. A chave NÃO fica no app.js.
+
+É necessário criar/configurar um secret no Worker:
+CHAVE_API_DO_GIPHY
+
+A chave atual do YouTube continua sendo:
+CHAVE_API_DO_YOUTUBE
+
+Depois de configurar os dois secrets, faça o deploy normalmente com:
+npx wrangler deploy
+
+Não coloque nenhuma chave diretamente em public/app.js ou index.html.
