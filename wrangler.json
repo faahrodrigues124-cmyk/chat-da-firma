@@ -33,8 +33,9 @@
     }
   ],
   "secrets": {
-    "required": [
-      "CHAVE_API_DO_YOUTUBE"
-    ]
-  }
+  "required": [
+    "CHAVE_API_DO_YOUTUBE",
+    "CHAVE_API_DO_YOUTUBE_2",
+    "CHAVE_API_DO_YOUTUBE_3"
+  ]
 }
