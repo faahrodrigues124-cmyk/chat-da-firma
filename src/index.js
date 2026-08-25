@@ -1,0 +1,645 @@
+const MAX_MENSAGEM = 500;
+const MAX_NOME = 30;
+const SESSION_DIAS = 30;
+const MAX_FILA = 50;
+const MAX_HISTORICO = 150;
+const ADMIN_USUARIO = "fab";
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "access-control-allow-origin": "*",
+      "cache-control": "no-store",
+    },
+  });
+}
+
+async function hashSenha(senha) {
+  const bytes = new TextEncoder().encode(String(senha));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function tokenNovo() { return `${crypto.randomUUID()}-${crypto.randomUUID()}`; }
+
+function tokenDaRequest(request) {
+  const auth = request.headers.get("authorization") || "";
+  if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
+  const header = request.headers.get("x-session-token") || "";
+  if (header) return header;
+  return new URL(request.url).searchParams.get("token") || "";
+}
+
+async function appData(env, path, options = {}) {
+  const stub = env.APP_DATA.get(env.APP_DATA.idFromName("global"));
+  return stub.fetch(new Request(`https://app-data.internal${path}`, options));
+}
+
+async function usuarioAtual(request, env) {
+  const token = tokenDaRequest(request);
+  if (!token) return null;
+  const r = await appData(env, `/internal/session/${encodeURIComponent(token)}`);
+  return r.ok ? r.json() : null;
+}
+
+// Cache de resultados do YouTube guardado na própria Durable Object AppData
+// (compartilhado por todas as salas). Evita repetir a mesma busca/recomendação
+// na API quando alguém já pesquisou ou já tocou aquela música recentemente.
+async function cacheYoutubeGet(env, chave, ttlMs) {
+  try {
+    const r = await appData(env, "/internal/music-cache/get", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: chave, ttlMs }),
+    });
+    if (!r.ok) return null;
+    const d = await r.json().catch(() => null);
+    return d && d.hit ? d.results : null;
+  } catch { return null; }
+}
+async function cacheYoutubeSet(env, chave, results) {
+  try {
+    await appData(env, "/internal/music-cache/set", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: chave, results }),
+    });
+  } catch { /* cache é um extra: se falhar, o site continua funcionando normalmente */ }
+}
+
+// Junta todas as chaves de API do YouTube configuradas no Worker. A segunda
+// e a terceira são opcionais — se não existirem, o site funciona só com a
+// primeira, exatamente como antes.
+function chavesYoutube(env) {
+  return [env.CHAVE_API_DO_YOUTUBE, env.CHAVE_API_DO_YOUTUBE_2, env.CHAVE_API_DO_YOUTUBE_3].filter(Boolean);
+}
+
+// Chama a API do YouTube tentando cada chave configurada em ordem. Se uma
+// chave estiver com a cota diária estourada, tenta a próxima
+// automaticamente antes de desistir — assim a busca continua funcionando
+// enquanto pelo menos uma das chaves ainda tiver cota sobrando no dia.
+async function chamarYoutube(caminho, parametros, env) {
+  const chaves = chavesYoutube(env);
+  if (!chaves.length) return { ok: false, status: 500, error: "Nenhuma chave de API do YouTube está configurada no Worker." };
+
+  let ultimoErro = null;
+  for (const chave of chaves) {
+    const api = new URL(`https://www.googleapis.com/youtube/v3/${caminho}`);
+    for (const [k, v] of Object.entries(parametros)) api.searchParams.set(k, v);
+    api.searchParams.set("key", chave);
+
+    let response;
+    try { response = await fetch(api); } catch { ultimoErro = { ok: false, status: 502, error: "Falha ao consultar o YouTube." }; continue; }
+    const raw = await response.text();
+    let data = {};
+    try { data = raw ? JSON.parse(raw) : {}; } catch { ultimoErro = { ok: false, status: 502, error: "Resposta inválida do YouTube." }; continue; }
+
+    if (response.ok && !data.error) return { ok: true, data };
+
+    const cotaEstourada = (data.error?.errors || []).some((e) => e.reason === "quotaExceeded") || data.error?.status === "RESOURCE_EXHAUSTED";
+    ultimoErro = { ok: false, status: 502, error: data.error?.message || `YouTube respondeu ${response.status}.`, cotaEstourada };
+    if (!cotaEstourada) return ultimoErro; // erro que não é de cota: outra chave não vai resolver
+    // se foi cota estourada, o laço continua e tenta a próxima chave
+  }
+  return ultimoErro || { ok: false, status: 502, error: "Todas as chaves do YouTube estão com a cota estourada.", cotaEstourada: true };
+}
+
+async function buscarMusica(url, env) {
+  const termo = (url.searchParams.get("q") || "").trim();
+  if (!termo) return json({ ok: false, error: "Informe uma busca." }, 400);
+
+  const chaveCache = `busca:v4:${termo.toLowerCase()}`;
+  const emCache = await cacheYoutubeGet(env, chaveCache, 6 * 60 * 60 * 1000);
+  if (emCache && !Array.isArray(emCache)) return json({ ok: true, ...emCache });
+
+  // A busca de vídeos e a busca de playlists são separadas pela API do YouTube.
+  // Cada chamada passa pelo rodízio das três chaves configuradas no Worker.
+  const [videosResultado, playlistsResultado] = await Promise.all([
+    chamarYoutube("search", {
+      part: "snippet", type: "video", maxResults: "8", videoEmbeddable: "true", q: termo,
+    }, env),
+    chamarYoutube("search", {
+      part: "snippet,contentDetails", type: "playlist", maxResults: "50", q: termo,
+    }, env),
+  ]);
+
+  // Se a busca de vídeos falhar por uma razão diferente de cota, ainda podemos
+  // mostrar playlists se essa parte tiver funcionado — e vice-versa.
+  if (!videosResultado.ok && !playlistsResultado.ok) {
+    const erro = videosResultado.error || playlistsResultado.error || "Não foi possível buscar.";
+    return json({ ok: false, error: erro, cotaEstourada: Boolean(videosResultado.cotaEstourada || playlistsResultado.cotaEstourada) }, 502);
+  }
+
+  const videos = videosResultado.ok ? (videosResultado.data.items || []).filter((x) => x.id?.videoId && x.snippet).map((x) => ({
+    id: x.id.videoId,
+    title: x.snippet.title,
+    channel: x.snippet.channelTitle,
+    thumbnail: x.snippet.thumbnails?.high?.url || x.snippet.thumbnails?.medium?.url || x.snippet.thumbnails?.default?.url || "",
+    type: "video",
+  })) : [];
+
+  const playlists = playlistsResultado.ok ? (playlistsResultado.data.items || []).filter((x) => x.id?.playlistId && x.snippet).map((x) => ({
+    id: x.id.playlistId,
+    title: x.snippet.title,
+    channel: x.snippet.channelTitle,
+    thumbnail: x.snippet.thumbnails?.high?.url || x.snippet.thumbnails?.medium?.url || x.snippet.thumbnails?.default?.url || "",
+    type: "playlist",
+    itemCount: Number(x.contentDetails?.itemCount || 0),
+  })) : [];
+
+  const payload = { videos, playlists };
+  await cacheYoutubeSet(env, chaveCache, payload);
+  return json({ ok: true, ...payload });
+}
+
+async function buscarPlaylist(url, env) {
+  const playlistId = (url.searchParams.get("id") || "").trim();
+  if (!playlistId) return json({ ok: false, error: "Playlist inválida." }, 400);
+  if (!/^[A-Za-z0-9_-]{5,100}$/.test(playlistId)) return json({ ok: false, error: "ID da playlist inválido." }, 400);
+
+  const chaveCache = `playlist:v1:${playlistId}`;
+  const emCache = await cacheYoutubeGet(env, chaveCache, 6 * 60 * 60 * 1000);
+  if (Array.isArray(emCache)) return json({ ok: true, results: emCache });
+
+  const resultado = await chamarYoutube("playlistItems", {
+    part: "snippet,contentDetails", playlistId, maxResults: "50",
+  }, env);
+  if (!resultado.ok) return json({ ok: false, error: resultado.error, cotaEstourada: Boolean(resultado.cotaEstourada) }, resultado.status);
+
+  const bruto = (resultado.data.items || []).filter((x) => x.contentDetails?.videoId && x.snippet);
+  if (!bruto.length) return json({ ok: true, results: [] });
+
+  // Confirma quais vídeos continuam disponíveis/embeddable antes de colocar
+  // a playlist na fila, evitando itens privados ou removidos.
+  const ids = bruto.map((x) => x.contentDetails.videoId).slice(0, 50);
+  const detalhes = await chamarYoutube("videos", {
+    part: "snippet,status", id: ids.join(","), maxResults: "50",
+  }, env);
+  const statusMap = new Map();
+  if (detalhes.ok) {
+    for (const x of detalhes.data.items || []) {
+      statusMap.set(x.id, x);
+    }
+  }
+
+  const results = bruto.map((x) => {
+    const id = x.contentDetails.videoId;
+    const detail = statusMap.get(id);
+    const snippet = detail?.snippet || x.snippet;
+    return {
+      id,
+      title: snippet?.title || x.snippet.title || "Vídeo",
+      channel: snippet?.channelTitle || x.snippet.channelTitle || "YouTube",
+      thumbnail: snippet?.thumbnails?.high?.url || snippet?.thumbnails?.medium?.url || snippet?.thumbnails?.default?.url || "",
+      type: "video",
+      embeddable: detail?.status ? detail.status.embeddable !== false : true,
+    };
+  }).filter((x) => x.embeddable && x.id);
+
+  await cacheYoutubeSet(env, chaveCache, results);
+  return json({ ok: true, results });
+}
+
+const GIPHY_SERVER_KEY = "GlVGYHkr3WSBnllca54iNt0yFbjz7L65";
+
+async function buscarGifs(url, env) {
+  // A chave fica somente no Worker; o navegador nunca recebe a API key.
+  // Se futuramente você quiser trocar a chave, basta substituir esta constante.
+  const giphyKey = env.CHAVE_API_DO_GIPHY || GIPHY_SERVER_KEY;
+  const q = (url.searchParams.get("q") || "").trim().slice(0, 50);
+  const endpoint = q ? "https://api.giphy.com/v1/gifs/search" : "https://api.giphy.com/v1/gifs/trending";
+  const apiUrl = new URL(endpoint);
+  apiUrl.searchParams.set("api_key", giphyKey);
+  apiUrl.searchParams.set("limit", "24");
+  apiUrl.searchParams.set("rating", "g");
+  apiUrl.searchParams.set("lang", "pt");
+  if (q) apiUrl.searchParams.set("q", q);
+  let response;
+  try { response = await fetch(apiUrl); } catch { return json({ ok: false, error: "Falha ao conectar à biblioteca de GIFs." }, 502); }
+  const raw = await response.text();
+  let data = {}; try { data = raw ? JSON.parse(raw) : {}; } catch { return json({ ok: false, error: "A biblioteca de GIFs devolveu uma resposta inválida." }, 502); }
+  if (!response.ok || data.meta?.status >= 400) return json({ ok: false, error: data.meta?.msg || `Biblioteca de GIFs respondeu ${response.status}.` }, 502);
+  const results = (Array.isArray(data.data) ? data.data : []).map(x => ({
+    id: x.id, title: x.title || "GIF", url: x.images?.fixed_height?.url || x.images?.original?.url || "",
+    preview: x.images?.fixed_width_small?.url || x.images?.fixed_height_small?.url || x.images?.fixed_height?.url || ""
+  })).filter(x => x.url);
+  return json({ ok: true, results });
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (request.method === "OPTIONS") return new Response(null, { headers: {
+      "access-control-allow-origin": "*",
+      "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+      "access-control-allow-headers": "content-type, authorization, x-session-token",
+    }});
+
+    if (url.pathname === "/api/health") return json({ ok: true });
+    if (url.pathname === "/api/music") return buscarMusica(url, env);
+    if (url.pathname === "/api/playlist") return buscarPlaylist(url, env);
+    if (url.pathname === "/api/gifs") return buscarGifs(url, env);
+
+    if (url.pathname === "/api/auth/register" && request.method === "POST") {
+      const b = await request.json().catch(() => ({}));
+      const nome = String(b.nome || "").trim();
+      const senha = String(b.senha || "");
+      if (nome.length < 3 || nome.length > MAX_NOME) return json({ ok: false, error: "O usuário deve ter entre 3 e 30 caracteres." }, 400);
+      if (senha.length < 6) return json({ ok: false, error: "A senha deve ter pelo menos 6 caracteres." }, 400);
+      const r = await appData(env, "/internal/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ nome, senhaHash: await hashSenha(senha) }) });
+      return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    }
+
+    if (url.pathname === "/api/auth/login" && request.method === "POST") {
+      const b = await request.json().catch(() => ({}));
+      const r = await appData(env, "/internal/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ nome: String(b.nome || "").trim(), senhaHash: await hashSenha(String(b.senha || "")) }) });
+      return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    }
+
+    if (url.pathname === "/api/auth/me") {
+      const user = await usuarioAtual(request, env);
+      return user ? json({ ok: true, user }) : json({ ok: false, error: "Sessão expirada." }, 401);
+    }
+
+    if (url.pathname === "/api/config" && request.method === "GET") {
+      const r = await appData(env, "/internal/config");
+      return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    }
+
+    if (url.pathname === "/api/settings/profile" && request.method === "POST") {
+      const user = await usuarioAtual(request, env);
+      if (!user) return json({ ok: false, error: "Faça login." }, 401);
+      const b = await request.json().catch(() => ({}));
+      const displayName = String(b.displayName || "").trim();
+      if (displayName.length < 2 || displayName.length > MAX_NOME) return json({ ok: false, error: "O nome de exibição deve ter entre 2 e 30 caracteres." }, 400);
+      const r = await appData(env, "/internal/settings/profile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: user.id, displayName }) });
+      return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    }
+
+    if (url.pathname === "/api/admin/settings" && request.method === "POST") {
+      const user = await usuarioAtual(request, env);
+      if (!user || user.role !== "admin") return json({ ok: false, error: "Acesso restrito ao administrador." }, 403);
+      const b = await request.json().catch(() => ({}));
+      const siteName = String(b.siteName || "").trim();
+      if (siteName.length < 2 || siteName.length > 40) return json({ ok: false, error: "O nome do site deve ter entre 2 e 40 caracteres." }, 400);
+      const r = await appData(env, "/internal/admin/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ siteName }) });
+      return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    }
+
+    if (url.pathname === "/api/rooms" && request.method === "GET") {
+      if (!await usuarioAtual(request, env)) return json({ ok: false, error: "Faça login." }, 401);
+      const r = await appData(env, "/internal/rooms");
+      return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    }
+
+    if (url.pathname === "/api/rooms" && request.method === "POST") {
+      const user = await usuarioAtual(request, env);
+      if (!user) return json({ ok: false, error: "Faça login." }, 401);
+      const b = await request.json().catch(() => ({}));
+      const nome = String(b.nome || "").trim().toLowerCase().replace(/\s+/g, "-");
+      const senha = String(b.senha || "");
+      if (!nome || nome.length > MAX_NOME) return json({ ok: false, error: "Nome de sala inválido." }, 400);
+      if (senha && senha.length < 4) return json({ ok: false, error: "A senha deve ter pelo menos 4 caracteres." }, 400);
+      const r = await appData(env, "/internal/rooms/create", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ nome, accent: String(b.accent || "violet"), senhaHash: senha ? await hashSenha(senha) : "", ownerId: user.id, ownerName: user.nome }) });
+      return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    }
+
+    if (url.pathname.startsWith("/api/admin/rooms/clear-all") && request.method === "POST") {
+      const user = await usuarioAtual(request, env);
+      if (!user || user.role !== "admin") return json({ ok: false, error: "Acesso restrito ao administrador." }, 403);
+      const r = await appData(env, "/internal/rooms");
+      const data = await r.json();
+      for (const room of data.rooms || []) {
+        const stub = env.CHAT_ROOM.get(env.CHAT_ROOM.idFromName(room.nome));
+        await stub.fetch(new Request("https://admin.internal/admin/clear", { method: "POST" }));
+      }
+      return json({ ok: true });
+    }
+
+    if (url.pathname.startsWith("/api/admin/rooms/") && url.pathname.endsWith("/clear") && request.method === "POST") {
+      const user = await usuarioAtual(request, env);
+      if (!user || user.role !== "admin") return json({ ok: false, error: "Acesso restrito ao administrador." }, 403);
+      const name = decodeURIComponent(url.pathname.split("/")[4] || "").toLowerCase();
+      const stub = env.CHAT_ROOM.get(env.CHAT_ROOM.idFromName(name));
+      const r = await stub.fetch(new Request("https://admin.internal/admin/clear", { method: "POST" }));
+      return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json" } });
+    }
+
+    if (url.pathname.startsWith("/api/admin/rooms/") && request.method === "DELETE") {
+      const user = await usuarioAtual(request, env);
+      if (!user || user.role !== "admin") return json({ ok: false, error: "Acesso restrito ao administrador." }, 403);
+      const name = decodeURIComponent(url.pathname.split("/").pop() || "").toLowerCase();
+      if (!name || name === "geral") return json({ ok: false, error: "A sala geral não pode ser apagada." }, 400);
+      const stub = env.CHAT_ROOM.get(env.CHAT_ROOM.idFromName(name));
+      await stub.fetch(new Request("https://admin.internal/admin/delete", { method: "POST" }));
+      const r = await appData(env, `/internal/rooms/${encodeURIComponent(name)}`, { method: "DELETE" });
+      return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json" } });
+    }
+
+    if (url.pathname === "/api/admin/rooms" && request.method === "GET") {
+      const user = await usuarioAtual(request, env);
+      if (!user || user.role !== "admin") return json({ ok: false, error: "Acesso restrito ao administrador." }, 403);
+      const r = await appData(env, "/internal/rooms");
+      return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json" } });
+    }
+
+    if (url.pathname === "/ws") {
+      // Não recriamos o Request de WebSocket aqui: o clone pode perder o upgrade
+      // em alguns runtimes. O próprio Durable Object valida a sessão e a sala.
+      const roomName = (url.searchParams.get("room") || "geral").trim().slice(0, MAX_NOME).toLowerCase();
+      if (!roomName) return new Response("Sala inválida.", { status: 400 });
+      const stub = env.CHAT_ROOM.get(env.CHAT_ROOM.idFromName(roomName));
+      return stub.fetch(request);
+    }
+
+    return env.ASSETS.fetch(request);
+  },
+};
+
+class AppData {
+  constructor(state) {
+    this.state = state;
+    this.state.blockConcurrencyWhile(async () => {
+      this.users = await this.state.storage.get("users") || {};
+      this.sessions = await this.state.storage.get("sessions") || {};
+      this.rooms = await this.state.storage.get("rooms") || {};
+      this.config = await this.state.storage.get("config") || { siteName: "Chat da Firma" };
+      if (!this.config.siteName) this.config.siteName = "Chat da Firma";
+      this.musicCache = await this.state.storage.get("musicCache") || {};
+      if (!this.rooms.geral) this.rooms.geral = { nome: "geral", accent: "violet", senhaHash: "", ownerId: "", ownerName: "Sistema" };
+      let changed = false;
+      for (const user of Object.values(this.users)) {
+        const role = user.nome.toLowerCase() === ADMIN_USUARIO ? "admin" : "user";
+        if (user.role !== role) { user.role = role; changed = true; }
+      }
+      if (changed) await this.persist();
+    });
+  }
+  async persist() { await this.state.storage.put({ users: this.users, sessions: this.sessions, rooms: this.rooms, config: this.config }); }
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname === "/internal/register" && request.method === "POST") {
+      const b = await request.json(); const key = String(b.nome).toLowerCase();
+      if (this.users[key]) return json({ ok: false, error: "Esse usuário já existe." }, 409);
+      const id = crypto.randomUUID(); this.users[key] = { id, nome: b.nome, displayName: b.nome, senhaHash: b.senhaHash, role: key === ADMIN_USUARIO ? "admin" : "user" };
+      const token = tokenNovo(); this.sessions[token] = { userId: id, expiresAt: Date.now() + SESSION_DIAS * 86400000 }; await this.persist();
+      return json({ ok: true, token, user: { id, nome: b.nome, displayName: this.users[key].displayName || b.nome, role: this.users[key].role } });
+    }
+    if (url.pathname === "/internal/login" && request.method === "POST") {
+      const b = await request.json(); const user = this.users[String(b.nome || "").toLowerCase()];
+      if (!user || user.senhaHash !== b.senhaHash) return json({ ok: false, error: "Usuário ou senha incorretos." }, 401);
+      user.role = user.nome.toLowerCase() === ADMIN_USUARIO ? "admin" : "user";
+      const token = tokenNovo(); this.sessions[token] = { userId: user.id, expiresAt: Date.now() + SESSION_DIAS * 86400000 }; await this.persist();
+      return json({ ok: true, token, user: { id: user.id, nome: user.nome, displayName: user.displayName || user.nome, role: user.role } });
+    }
+    if (url.pathname.startsWith("/internal/session/")) {
+      const token = decodeURIComponent(url.pathname.split("/").pop()); const sess = this.sessions[token];
+      if (!sess || sess.expiresAt < Date.now()) return json({ ok: false }, 401);
+      const user = Object.values(this.users).find((u) => u.id === sess.userId); if (!user) return json({ ok: false }, 401);
+      user.role = user.nome.toLowerCase() === ADMIN_USUARIO ? "admin" : "user";
+      return json({ id: user.id, nome: user.nome, displayName: user.displayName || user.nome, role: user.role });
+    }
+    if (url.pathname === "/internal/config") return json({ ok: true, siteName: this.config.siteName || "Chat da Firma" });
+    if (url.pathname === "/internal/music-cache/get" && request.method === "POST") {
+      const b = await request.json().catch(() => ({}));
+      const chave = String(b.key || "");
+      const item = chave ? this.musicCache[chave] : null;
+      const ttlMs = Number(b.ttlMs) || 6 * 60 * 60 * 1000;
+      if (!item || Date.now() - item.ts > ttlMs) return json({ ok: true, hit: false });
+      return json({ ok: true, hit: true, results: item.results });
+    }
+    if (url.pathname === "/internal/music-cache/set" && request.method === "POST") {
+      const b = await request.json().catch(() => ({}));
+      const chave = String(b.key || "");
+      if (!chave) return json({ ok: false }, 400);
+      this.musicCache[chave] = { results: b.results, ts: Date.now() };
+      // mantém o cache com no máximo 300 entradas, removendo as mais antigas
+      const chaves = Object.keys(this.musicCache);
+      if (chaves.length > 300) {
+        chaves.sort((a, c) => this.musicCache[a].ts - this.musicCache[c].ts);
+        for (const k of chaves.slice(0, chaves.length - 300)) delete this.musicCache[k];
+      }
+      await this.state.storage.put("musicCache", this.musicCache);
+      return json({ ok: true });
+    }
+    if (url.pathname === "/internal/settings/profile" && request.method === "POST") {
+      const b = await request.json();
+      const user = Object.values(this.users).find((u) => u.id === String(b.userId || ""));
+      if (!user) return json({ ok: false, error: "Usuário não encontrado." }, 404);
+      const displayName = String(b.displayName || "").trim();
+      if (displayName.length < 2 || displayName.length > MAX_NOME) return json({ ok: false, error: "Nome de exibição inválido." }, 400);
+      user.displayName = displayName;
+      await this.persist();
+      return json({ ok: true, user: { id: user.id, nome: user.nome, displayName: user.displayName, role: user.role } });
+    }
+    if (url.pathname === "/internal/admin/settings" && request.method === "POST") {
+      const b = await request.json();
+      this.config.siteName = String(b.siteName || "Chat da Firma").trim().slice(0, 40) || "Chat da Firma";
+      await this.persist();
+      return json({ ok: true, siteName: this.config.siteName });
+    }
+    if (url.pathname === "/internal/rooms") return json({ ok: true, rooms: Object.values(this.rooms).map(({ senhaHash, ...r }) => ({ ...r, protegida: Boolean(senhaHash) })) });
+    if (url.pathname.startsWith("/internal/room/")) {
+      const name = decodeURIComponent(url.pathname.split("/").pop()).toLowerCase(); const room = this.rooms[name];
+      return room ? json({ ok: true, ...room }) : json({ ok: false }, 404);
+    }
+    if (url.pathname.startsWith("/internal/rooms/") && request.method === "DELETE") {
+      const name = decodeURIComponent(url.pathname.split("/").pop()).toLowerCase();
+      if (!this.rooms[name]) return json({ ok: false, error: "Sala não encontrada." }, 404);
+      if (name === "geral") return json({ ok: false, error: "A sala geral não pode ser apagada." }, 400);
+      delete this.rooms[name]; await this.persist(); return json({ ok: true });
+    }
+    if (url.pathname === "/internal/rooms/create" && request.method === "POST") {
+      const b = await request.json(); const name = String(b.nome).toLowerCase();
+      if (this.rooms[name]) return json({ ok: false, error: "Essa sala já existe." }, 409);
+      this.rooms[name] = { nome: name, accent: b.accent || "violet", senhaHash: b.senhaHash || "", ownerId: b.ownerId, ownerName: b.ownerName };
+      await this.persist(); return json({ ok: true, room: { ...this.rooms[name], protegida: Boolean(b.senhaHash) } });
+    }
+    return json({ ok: false, error: "Rota interna inválida." }, 404);
+  }
+}
+
+export class ChatRoom {
+  constructor(state, env) {
+    this.state = state; this.env = env; this.sessoes = new Map(); this.mensagens = []; this.fila = []; this.tocandoAgora = null; this.senhaHash = ""; this.ownerId = ""; this.radioOn = false; this.ultimoAvancoEm = 0;
+    this.state.blockConcurrencyWhile(async () => {
+      const s = await this.state.storage.get(["mensagens", "fila", "tocandoAgora", "senhaHash", "ownerId", "radioOn"]);
+      this.mensagens = s.get("mensagens") || []; this.fila = s.get("fila") || []; this.tocandoAgora = s.get("tocandoAgora") || null; this.senhaHash = s.get("senhaHash") || ""; this.ownerId = s.get("ownerId") || ""; this.radioOn = Boolean(s.get("radioOn"));
+    });
+  }
+  async persistir() { await this.state.storage.put({ mensagens: this.mensagens, fila: this.fila, tocandoAgora: this.tocandoAgora, senhaHash: this.senhaHash, ownerId: this.ownerId, radioOn: this.radioOn }); }
+  async preencherRecomendacoes() {
+    if (!this.radioOn || !this.tocandoAgora) return;
+    const faltam = Math.max(0, 3 - this.fila.length);
+    if (!faltam) return;
+
+    const chaveCache = `rec:${this.tocandoAgora.id}`;
+    let itens = await cacheYoutubeGet(this.env, chaveCache, 12 * 60 * 60 * 1000); // 12h — relacionados mudam pouco
+
+    if (!itens) {
+      const resultado = await chamarYoutube("search", {
+        part: "snippet", type: "video", maxResults: String(Math.min(8, Math.max(5, faltam + 3))), videoEmbeddable: "true", relatedToVideoId: this.tocandoAgora.id,
+      }, this.env);
+      if (!resultado.ok) return; // sem cache e sem cota: melhor deixar a fila como está do que travar a sala
+      itens = (resultado.data.items || []).filter((x) => x.id?.videoId && x.snippet).map((x) => ({
+        id: x.id.videoId,
+        title: x.snippet.title,
+        channel: x.snippet.channelTitle || "",
+        thumbnail: x.snippet.thumbnails?.high?.url || x.snippet.thumbnails?.medium?.url || x.snippet.thumbnails?.default?.url || "",
+      }));
+      await cacheYoutubeSet(this.env, chaveCache, itens);
+    }
+
+    const existentes = new Set([this.tocandoAgora.id, ...this.fila.map((x) => x.id)]);
+    for (const item of itens) {
+      if (!item.id || existentes.has(item.id)) continue;
+      this.fila.push({ ...item, recommendation: true, requestedBy: "Rádio da sala" });
+      existentes.add(item.id);
+      if (this.fila.length >= 3) break;
+    }
+  }
+  enviar(socket, data) { try { socket.send(JSON.stringify(data)); } catch {} }
+  transmitir(data) { const raw = JSON.stringify(data); for (const s of this.sessoes.keys()) { try { s.send(raw); } catch {} } }
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname.endsWith("/admin/clear")) { this.mensagens = []; await this.persistir(); this.transmitir({ type: "mensagens_limpas" }); return json({ ok: true }); }
+    if (request.method === "POST" && url.pathname.endsWith("/admin/delete")) { this.transmitir({ type: "sala_excluida" }); for (const s of this.sessoes.keys()) { try { s.close(1000, "Sala removida"); } catch {} } await this.state.storage.deleteAll(); return json({ ok: true }); }
+    if (request.headers.get("Upgrade") !== "websocket") return new Response("WebSocket esperado.", { status: 426 });
+
+    // Valida a sessão diretamente no Durable Object. Isso mantém o Request
+    // original do WebSocket intacto e evita falhas de conexão causadas por
+    // reconstrução do Request no Worker principal.
+    const urlToken = new URL(request.url).searchParams.get("token") || "";
+    if (!urlToken || !this.env?.APP_DATA) return new Response("Sessão inválida.", { status: 401 });
+    const dataStub = this.env.APP_DATA.get(this.env.APP_DATA.idFromName("global"));
+    const sessionResp = await dataStub.fetch(new Request(`https://app-data.internal/internal/session/${encodeURIComponent(urlToken)}`));
+    if (!sessionResp.ok) return new Response("Sessão inválida.", { status: 401 });
+    const user = await sessionResp.json();
+
+    const roomName = new URL(request.url).searchParams.get("room") || "geral";
+    const roomResp = await dataStub.fetch(new Request(`https://app-data.internal/internal/room/${encodeURIComponent(roomName.toLowerCase())}`));
+    if (!roomResp.ok) return new Response("Sala não encontrada.", { status: 404 });
+    const room = await roomResp.json();
+    this.senhaHash = room.senhaHash || "";
+    this.ownerId = room.ownerId || "";
+
+    const pair = new WebSocketPair(); const [client, server] = Object.values(pair); server.accept();
+    const session = { nome: user.displayName || user.nome || "Visitante", usuarioId: user.id || "", role: user.role || "user", autenticado: false };
+    this.sessoes.set(server, session);
+    this.enviar(server, { type: "autenticacao_necessaria", protegida: Boolean(this.senhaHash) });
+    server.addEventListener("message", (e) => this.mensagem(server, e.data));
+    const off = () => { this.sessoes.delete(server); this.presenca(); }; server.addEventListener("close", off); server.addEventListener("error", off);
+    return new Response(null, { status: 101, webSocket: client });
+  }
+  presenca() { const users = [...this.sessoes.values()].filter((s) => s.autenticado).map((s) => s.nome); this.transmitir({ type: "presenca", total: users.length, usuarios: users }); }
+  async mensagem(socket, raw) {
+    let d; try { d = JSON.parse(raw); } catch { this.enviar(socket, { type: "erro", message: "Mensagem inválida." }); return; }
+    const s = this.sessoes.get(socket); if (!s) return;
+    if (d.type === "entrar") {
+      if (this.senhaHash && d.senhaHash !== this.senhaHash) { this.enviar(socket, { type: "erro", code: "SENHA_INCORRETA", message: "Senha da sala incorreta." }); return; }
+      s.autenticado = true;
+      this.enviar(socket, { type: "estado_inicial", mensagens: this.mensagens, fila: this.fila, tocandoAgora: this.tocandoAgora, ownerId: this.ownerId, radioOn: this.radioOn }); this.presenca(); return;
+    }
+    if (!s.autenticado) return;
+    if (d.type === "mensagem" || d.type === "media") {
+      const isMedia = d.type === "media";
+      const text = String(d.text || "").trim();
+      if (!isMedia && !text) return;
+      if (!isMedia && text.length > MAX_MENSAGEM) return this.enviar(socket, { type: "erro", message: `Mensagem muito longa (máx. ${MAX_MENSAGEM}).` });
+      if (isMedia) {
+        const type = String(d.mediaType || ""); const mediaUrl = String(d.url || "");
+        if (!["gif", "image"].includes(type)) return;
+        if (mediaUrl.length > 520000) return this.enviar(socket, { type: "erro", message: "Essa mídia é muito grande." });
+        if (type === "gif" && !/^https:\/\/.*\.(gif|gif\?.*)$/i.test(mediaUrl) && !mediaUrl.includes("giphy.com")) return;
+        if (type === "image" && !/^data:image\/(png|jpe?g|webp|gif);base64,/i.test(mediaUrl)) return;
+      }
+      const msg = { id: crypto.randomUUID(), autorId: s.usuarioId, nome: s.nome, text, ts: Date.now(), reacoes: {} };
+      if (isMedia) { msg.mediaType = String(d.mediaType); msg.url = String(d.url); msg.alt = String(d.alt || "").slice(0, 120); msg.caption = String(d.caption || "").slice(0, 240); msg.source = String(d.source || "").slice(0, 30); }
+      this.mensagens.push(msg); if (this.mensagens.length > MAX_HISTORICO) this.mensagens.shift(); await this.persistir(); this.transmitir({ type: "mensagem", mensagem: msg }); return;
+    }
+    if (d.type === "reacao") {
+      const m = this.mensagens.find((x) => x.id === d.messageId); if (!m || !d.emoji) return; m.reacoes[d.emoji] = (m.reacoes[d.emoji] || 0) + 1; await this.persistir(); this.transmitir({ type: "reacao", messageId: d.messageId, emoji: d.emoji, total: m.reacoes[d.emoji] }); return;
+    }
+    if (d.type === "limpar_mensagens") {
+      if (s.usuarioId !== this.ownerId) return this.enviar(socket, { type: "erro", message: "Somente o criador da sala pode limpar esta conversa." });
+      this.mensagens = []; await this.persistir(); this.transmitir({ type: "mensagens_limpas" }); return;
+    }
+    if (d.type === "radio_toggle") {
+      this.radioOn = Boolean(d.enabled);
+      if (this.radioOn && this.tocandoAgora) await this.preencherRecomendacoes();
+      await this.persistir();
+      this.transmitir({ type: "radio_estado", radioOn: this.radioOn, fila: this.fila });
+      if (this.radioOn && this.tocandoAgora) this.transmitir({ type: "tocando_agora", tocandoAgora: this.tocandoAgora, fila: this.fila });
+      return;
+    }
+    if (d.type === "playlist_adicionar") {
+      const tracks = Array.isArray(d.tracks) ? d.tracks.filter(x => x && x.id && x.title).slice(0, MAX_FILA) : [];
+      if (!tracks.length) return this.enviar(socket, { type: "erro", message: "A playlist não possui faixas disponíveis." });
+      const existentes = new Set([this.tocandoAgora?.id, ...this.fila.map(x => x.id)].filter(Boolean));
+      const novas = tracks.filter(x => !existentes.has(x.id));
+      if (!novas.length) return this.enviar(socket, { type: "erro", message: "As faixas dessa playlist já estão na fila." });
+
+      const agora = Date.now();
+      let primeira = null;
+      if (!this.tocandoAgora) {
+        primeira = novas.shift();
+        this.tocandoAgora = { ...primeira, startedAt: agora, position: 0, paused: false, requestedBy: s.nome, playlistId: String(d.playlistId || ""), playlistTitle: String(d.playlistTitle || "") };
+      }
+      const espaco = Math.max(0, MAX_FILA - this.fila.length);
+      this.fila.push(...novas.slice(0, espaco).map(x => ({ ...x, requestedBy: s.nome, playlistId: String(d.playlistId || ""), playlistTitle: String(d.playlistTitle || "") })));
+
+      const music = primeira || novas[0];
+      const musicMsg = { id: crypto.randomUUID(), autorId: s.usuarioId, nome: s.nome, text: "", ts: agora, reacoes: {}, tipo: "musica", music: {
+        ...(primeira || { ...music, position: "fila" }),
+        playlist: true, playlistTitle: String(d.playlistTitle || ""), playlistId: String(d.playlistId || "")
+      } };
+      this.mensagens.push(musicMsg); if (this.mensagens.length > MAX_HISTORICO) this.mensagens.shift();
+      if (this.radioOn && this.tocandoAgora && this.fila.length < 3) await this.preencherRecomendacoes();
+      await this.persistir();
+      this.transmitir({ type: "mensagem", mensagem: musicMsg });
+      this.transmitir({ type: "tocando_agora", tocandoAgora: this.tocandoAgora, fila: this.fila });
+      return;
+    }
+    if (d.type === "fila_adicionar") {
+      if (!d.id || !d.title) return;
+      const music = { id: d.id, title: d.title, channel: d.channel || "", thumbnail: d.thumbnail || "" };
+      const wasEmpty = !this.tocandoAgora;
+      if (!this.tocandoAgora) this.tocandoAgora = { ...music, startedAt: Date.now(), position: 0, paused: false, requestedBy: s.nome };
+      else if (this.fila.length < MAX_FILA) this.fila.push({ ...music, requestedBy: s.nome });
+      else return this.enviar(socket, { type: "erro", message: "Fila cheia." });
+      if (this.radioOn && this.tocandoAgora && this.fila.length < 3) await this.preencherRecomendacoes();
+      const musicMsg = { id: crypto.randomUUID(), autorId: s.usuarioId, nome: s.nome, text: "", ts: Date.now(), reacoes: {}, tipo: "musica", music: { ...music, recommendation: false, position: wasEmpty ? "agora" : "fila" } };
+      this.mensagens.push(musicMsg); if (this.mensagens.length > MAX_HISTORICO) this.mensagens.shift();
+      await this.persistir(); this.transmitir({ type: "mensagem", mensagem: musicMsg }); this.transmitir({ type: "tocando_agora", tocandoAgora: this.tocandoAgora, fila: this.fila }); return;
+    }
+    if (d.type === "pausar_musica") {
+      if (!this.tocandoAgora || this.tocandoAgora.paused) return;
+      let position = Number(d.position); if (!Number.isFinite(position) || position < 0) position = Math.max(0, (Date.now() - this.tocandoAgora.startedAt) / 1000);
+      this.tocandoAgora = { ...this.tocandoAgora, position, paused: true, pausedAt: Date.now() };
+      await this.persistir(); this.transmitir({ type: "tocando_agora", tocandoAgora: this.tocandoAgora, fila: this.fila }); return;
+    }
+    if (d.type === "continuar_musica") {
+      if (!this.tocandoAgora || !this.tocandoAgora.paused) return;
+      const position = Number(this.tocandoAgora.position || 0);
+      this.tocandoAgora = { ...this.tocandoAgora, position, startedAt: Date.now() - position * 1000, paused: false, pausedAt: 0 };
+      await this.persistir(); this.transmitir({ type: "tocando_agora", tocandoAgora: this.tocandoAgora, fila: this.fila }); return;
+    }
+    if (d.type === "proxima_musica") {
+      if (!this.tocandoAgora) return;
+      if (d.videoId && d.videoId !== this.tocandoAgora.id) return;
+      const now = Date.now(); if (now - this.ultimoAvancoEm < 3500) return; this.ultimoAvancoEm = now;
+      if (!this.fila.length && this.radioOn) await this.preencherRecomendacoes();
+      const next = this.fila.length ? this.fila.shift() : null;
+      this.tocandoAgora = next ? { ...next, startedAt: now, position: 0, paused: false } : null;
+      if (this.radioOn && this.tocandoAgora) await this.preencherRecomendacoes();
+      if (next?.recommendation) {
+        const recMsg = { id: crypto.randomUUID(), autorId: "radio", nome: "Rádio da sala", text: "", ts: now, reacoes: {}, tipo: "musica", music: { ...next, recommendation: true } };
+        this.mensagens.push(recMsg); if (this.mensagens.length > MAX_HISTORICO) this.mensagens.shift();
+        this.transmitir({ type: "mensagem", mensagem: recMsg });
+      }
+      await this.persistir(); this.transmitir({ type: "tocando_agora", tocandoAgora: this.tocandoAgora, fila: this.fila }); return;
+    }
+  }
+}
+
+export { AppData };
