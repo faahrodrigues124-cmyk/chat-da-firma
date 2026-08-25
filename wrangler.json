@@ -1,0 +1,35 @@
+{
+  "name": "chat-da-firma",
+  "main": "src/index.js",
+  "compatibility_date": "2025-01-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CHAT_ROOM",
+        "class_name": "ChatRoom"
+      },
+      {
+        "name": "APP_DATA",
+        "class_name": "AppData"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": [
+        "ChatRoom"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "AppData"
+      ]
+    }
+  ]
+}
